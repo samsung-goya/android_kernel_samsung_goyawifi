@@ -1221,6 +1221,26 @@ static int armv7_a9_pmu_init(struct arm_pmu *cpu_pmu)
 	return armv7_probe_num_events(cpu_pmu);
 }
 
+void __weak pxa988_pmu_ack(void)
+{
+}
+
+static irqreturn_t pxa988_pmu_handle_irq(struct arm_pmu *cpu_pmu)
+{
+	pxa988_pmu_ack();
+	return armv7pmu_handle_irq(cpu_pmu);
+}
+
+static int pxa988_a9_pmu_init(struct arm_pmu *cpu_pmu)
+{
+	int ret = armv7_a9_pmu_init(cpu_pmu);
+
+	if (ret)
+		return ret;
+	cpu_pmu->handle_irq = pxa988_pmu_handle_irq;
+	return 0;
+}
+
 static int armv7_a5_pmu_init(struct arm_pmu *cpu_pmu)
 {
 	armv7pmu_init(cpu_pmu);
@@ -2008,6 +2028,8 @@ static int scorpion_mp_pmu_init(struct arm_pmu *cpu_pmu)
 }
 
 static const struct of_device_id armv7_pmu_of_device_ids[] = {
+	{.compatible = "marvell,pxa988-pmu",	.data = pxa988_a9_pmu_init},
+	{.compatible = "marvell,pxa986-pmu",	.data = pxa988_a9_pmu_init},
 	{.compatible = "arm,cortex-a17-pmu",	.data = armv7_a17_pmu_init},
 	{.compatible = "arm,cortex-a15-pmu",	.data = armv7_a15_pmu_init},
 	{.compatible = "arm,cortex-a12-pmu",	.data = armv7_a12_pmu_init},
