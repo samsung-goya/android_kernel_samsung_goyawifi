@@ -19,9 +19,9 @@
 /* Bias pull-up/down values and masks (bits [15:13]) */
 #define PULL_NONE		0x0000
 #define PULL_UP			0xc000
-#define PULL_DOWN		0x8000
+#define PULL_DOWN		0xa000
 #define PULL_FLOAT		0x8000
-#define PULL_MASK		0xc000
+#define PULL_MASK		0xe000
 
 /* Low-power modes (sleep output / float / drive): value and mask */
 #define LPM_NONE		0x000
