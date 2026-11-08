@@ -12,7 +12,7 @@
 			GPIO47 AF6	/* UART1_RXD */
 			GPIO48 AF6	/* UART1_TXD */
 		>;
-		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
 	};
 
@@ -21,7 +21,7 @@
 			GPIO45 AF1	/* UART2_RXD */
 			GPIO46 AF1	/* UART2_TXD */
 		>;
-		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
 	};
 
@@ -30,7 +30,7 @@
 			GPIO16 AF0	/* CHG_SCL */
 			GPIO17 AF0	/* CHG_SDA */
 		>;
-		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 	};
 
 	i2c2_sensor_pins: i2c2-sensor-pins {
@@ -72,7 +72,7 @@
 			MMC1_CD   AF1
 			MMC1_WP   AF1
 		>;
-		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
 	};
 
@@ -102,7 +102,7 @@
 			DF_CLE_SM_OEN AF1 /* MMC3_CMD */
 			SM_SCLK AF1	/* MMC3_CLK */
 		>;
-		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 		pinctrl-single,drive-strength = <DS_FAST DS_MASK>;
 		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
 	};
@@ -112,7 +112,7 @@
 			GPIO1 AF0	/* KEY_VOLUMEUP */
 			GPIO2 AF0	/* KEY_VOLUMEDOWN */
 		>;
-		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 		pinctrl-single,low-power-mode = <LPM_DRIVE_HIGH LPM_MASK>;
 	};
 

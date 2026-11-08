@@ -58,6 +58,7 @@
 
 			asram: asram-section@0 {
 				reg = <0x0 0xaa00>;
+				label = "asram";
 				pool;
 			};
 		};
