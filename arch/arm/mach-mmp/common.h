@@ -3,6 +3,7 @@
 #define ARRAY_AND_SIZE(x)	(x), ARRAY_SIZE(x)
 
 extern void timer_init(int irq);
+void __init mmp_dt_init_timer(void);
 
 extern void __init mmp_map_io(void);
 extern void mmp_restart(enum reboot_mode, const char *);

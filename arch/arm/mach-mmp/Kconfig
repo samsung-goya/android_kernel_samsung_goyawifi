@@ -1,16 +1,17 @@
 menuconfig ARCH_MMP
-	bool "Marvell PXA168/910/MMP2"
+	bool "Marvell PXA168/910/MMP2/PXA988"
 	depends on ARCH_MULTI_V5 || ARCH_MULTI_V7
 	select GPIO_PXA
 	select GPIOLIB
 	select PINCTRL
 	select PLAT_PXA
 	help
-	  Support for Marvell's PXA168/PXA910(MMP) and MMP2 processor line.
+	  Support for Marvell's PXA168/PXA910(MMP), MMP2, and PXA988/PXA986
+	  processor lines.
 
 if ARCH_MMP
 
-menu "Marvell PXA168/910/MMP2 Implementations"
+menu "Marvell PXA168/910/MMP2/PXA988 Implementations"
 
 if ATAGS
 
@@ -127,6 +128,23 @@ config MACH_MMP2_DT
 	help
 	  Include support for Marvell MMP2 based platforms using
 	  the device tree.
+
+config MACH_PXA988_DT
+	bool "Support Marvell PXA988/PXA986 (Cortex-A9) platforms from device tree"
+	depends on ARCH_MULTI_V7
+	select ARM_GIC
+	select CACHE_L2X0
+	select HAVE_ARM_SCU
+	select HAVE_ARM_TWD
+	select PINCTRL
+	select PINCTRL_SINGLE
+	select COMMON_CLK
+	select ARCH_HAS_RESET_CONTROLLER
+	help
+	  Include support for Marvell PXA988 and PXA986 dual-core Cortex-A9
+	  SoCs using the Flattened Device Tree, including the Samsung Galaxy
+	  Tab 3 Lite 7.0 (SM-T110 / goyawifi). Need not select any legacy
+	  ATAGS board machine while MACH_PXA988_DT is enabled.
 
 endmenu
 

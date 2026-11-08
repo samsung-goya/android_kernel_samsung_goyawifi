@@ -151,6 +151,7 @@ textofs-y	:= 0x00008000
 textofs-$(CONFIG_PM_H1940)      := 0x00108000
 # Samsung PXA986/PXA988 reserves 0x00000000..0x000fffff for OBM
 textofs-$(CONFIG_ARM_SAMSUNG_PXA_BOOTFIXUP) := 0x00108000
+textofs-$(CONFIG_MACH_PXA988_DT)            := 0x00108000
 # SA1111 DMA bug: we don't want the kernel to live in precious DMA-able memory
 ifeq ($(CONFIG_ARCH_SA1100),y)
 textofs-$(CONFIG_SA1111) := 0x00208000
