@@ -492,6 +492,14 @@ static int mmp_tdma_terminate_all(struct dma_chan *chan)
 	return 0;
 }
 
+static void mmp_tdma_synchronize(struct dma_chan *chan)
+{
+	struct mmp_tdma_chan *tdmac = to_mmp_tdma_chan(chan);
+
+	/* Stop/free must wait for a period callback already queued by the IRQ. */
+	tasklet_kill(&tdmac->tasklet);
+}
+
 static int mmp_tdma_config(struct dma_chan *chan,
 			   struct dma_slave_config *dmaengine_cfg)
 {
@@ -515,6 +523,12 @@ static enum dma_status mmp_tdma_tx_status(struct dma_chan *chan,
 			dma_cookie_t cookie, struct dma_tx_state *txstate)
 {
 	struct mmp_tdma_chan *tdmac = to_mmp_tdma_chan(chan);
+
+	/* PCM cleanup may query status before the first cyclic transfer. */
+	if (!tdmac->desc_arr) {
+		dma_set_tx_state(txstate, chan->completed_cookie, chan->cookie, 0);
+		return DMA_COMPLETE;
+	}
 
 	tdmac->pos = mmp_tdma_get_pos(tdmac);
 	dma_set_tx_state(txstate, chan->completed_cookie, chan->cookie,
@@ -693,6 +707,7 @@ static int mmp_tdma_probe(struct platform_device *pdev)
 	tdev->device.device_pause = mmp_tdma_pause_chan;
 	tdev->device.device_resume = mmp_tdma_resume_chan;
 	tdev->device.device_terminate_all = mmp_tdma_terminate_all;
+	tdev->device.device_synchronize = mmp_tdma_synchronize;
 	tdev->device.copy_align = DMAENGINE_ALIGN_8_BYTES;
 
 	dma_set_mask(&pdev->dev, DMA_BIT_MASK(64));
