@@ -7,3 +7,4 @@ void __init mmp_dt_init_timer(void);
 
 extern void __init mmp_map_io(void);
 extern void mmp_restart(enum reboot_mode, const char *);
+void pxa988_secondary_startup(void);

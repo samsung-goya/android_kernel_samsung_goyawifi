@@ -35,5 +35,8 @@ obj-$(CONFIG_MACH_MARVELL_JASPER) += jasper.o
 obj-$(CONFIG_MACH_MMP_DT)	+= mmp-dt.o
 obj-$(CONFIG_MACH_MMP2_DT)	+= mmp2-dt.o
 obj-$(CONFIG_MACH_PXA988_DT)	+= pxa988-dt.o
+ifeq ($(CONFIG_SMP),y)
+obj-$(CONFIG_MACH_PXA988_DT)	+= platsmp-pxa988.o headsmp-pxa988.o
+endif
 obj-$(CONFIG_MACH_TETON_BGA)	+= teton_bga.o
 obj-$(CONFIG_MACH_GPLUGD)	+= gplugd.o
