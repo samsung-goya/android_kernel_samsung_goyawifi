@@ -1,0 +1,28 @@
+* Marvell PXA988 / PXA986 Pin Controller
+
+The Marvell PXA988 pin controller configures multi-function pins (MFPR) using
+the standard pinctrl-single / pinconf-single driver.
+
+Required properties for the pin controller node:
+- compatible: "pinconf-single"
+- reg: base address and length of the MFPR registers (typically <0xd401e000 0x330>)
+- #address-cells: <1>
+- #size-cells: <0>
+- #pinctrl-cells: <1>
+- pinctrl-single,register-width: <32>
+- pinctrl-single,function-mask: <7>
+- pinctrl-single,gpio-range: reference to gpio-range subnode
+
+Subnodes:
+Each subnode represents a pin group and contains:
+- pinctrl-single,pins: list of pin register offset and alternate function pairs
+- Optional pinconf properties:
+  - pinctrl-single,drive-strength
+  - pinctrl-single,bias-pullup
+  - pinctrl-single,bias-pulldown
+  - pinctrl-single,input-schmitt
+  - pinctrl-single,input-schmitt-enable
+  - pinctrl-single,low-power-mode
+
+Header:
+  <dt-bindings/pinctrl/marvell,pxa988-pinfunc.h>
