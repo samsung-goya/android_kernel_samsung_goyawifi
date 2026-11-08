@@ -23,11 +23,14 @@
 #include <err.h>
 #include <arpa/inet.h>
 #include <openssl/opensslv.h>
+#include <openssl/opensslconf.h>
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/err.h>
+#ifndef OPENSSL_NO_ENGINE
 #include <openssl/engine.h>
+#endif
 
 /*
  * OpenSSL 3.0 deprecates the OpenSSL's ENGINE API.
@@ -99,6 +102,7 @@ static void display_openssl_errors(int l)
 	}
 }
 
+#ifndef OPENSSL_NO_ENGINE
 static void drain_openssl_errors(void)
 {
 	const char *file;
@@ -108,6 +112,7 @@ static void drain_openssl_errors(void)
 		return;
 	while (ERR_get_error_line(&file, &line)) {}
 }
+#endif
 
 #define ERR(cond, fmt, ...)				\
 	do {						\
@@ -144,6 +149,7 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
 	EVP_PKEY *private_key;
 
 	if (!strncmp(private_key_name, "pkcs11:", 7)) {
+#ifndef OPENSSL_NO_ENGINE
 		ENGINE *e;
 
 		ENGINE_load_builtin_engines();
@@ -160,6 +166,10 @@ static EVP_PKEY *read_private_key(const char *private_key_name)
 		private_key = ENGINE_load_private_key(e, private_key_name,
 						      NULL, NULL);
 		ERR(!private_key, "%s", private_key_name);
+#else
+		fprintf(stderr, "Error: PKCS#11 not supported (OPENSSL_NO_ENGINE)\n");
+		exit(1);
+#endif
 	} else {
 		BIO *b;
 
