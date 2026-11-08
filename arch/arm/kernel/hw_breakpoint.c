@@ -25,6 +25,7 @@
 
 #include <linux/errno.h>
 #include <linux/hardirq.h>
+#include <linux/of.h>
 #include <linux/perf_event.h>
 #include <linux/hw_breakpoint.h>
 #include <linux/smp.h>
@@ -1116,6 +1117,17 @@ static inline void pm_init(void)
 static int __init arch_hw_breakpoint_init(void)
 {
 	int ret;
+
+	/*
+	 * On Samsung Galaxy Tab 3 Lite (SM-T110 / goyawifi, Marvell PXA986 A0),
+	 * reading CP14 DBGOSLSR in core_has_os_save_restore() triggers an
+	 * unhandled undefined-instruction abort before debug_reg_hook is
+	 * registered. Skip hardware breakpoint probing on this machine.
+	 */
+	if (of_machine_is_compatible("samsung,goyawifi")) {
+		pr_info("PXA986 CP14 debug access unavailable; hardware breakpoints disabled\n");
+		return 0;
+	}
 
 	debug_arch = get_debug_arch();
 
