@@ -1,0 +1,139 @@
+// SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause)
+/*
+ * Pin groups for Samsung Galaxy Tab 3 Lite 7.0 (SM-T110, goyawifi).
+ *
+ * Sourced from Samsung vendor kernel board-goya.c (emeidkb_pin_config)
+ * and mfp-pxa986-goya.h.
+ */
+
+&pmx {
+	uart1_pins: uart1-pins {
+		pinctrl-single,pins = <
+			GPIO47 AF6	/* UART1_RXD */
+			GPIO48 AF6	/* UART1_TXD */
+		>;
+		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
+	};
+
+	uart2_pins: uart2-pins {
+		pinctrl-single,pins = <
+			GPIO45 AF1	/* UART2_RXD */
+			GPIO46 AF1	/* UART2_TXD */
+		>;
+		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
+	};
+
+	i2c1_pmic_pins: i2c1-pmic-pins {
+		pinctrl-single,pins = <
+			GPIO16 AF0	/* CHG_SCL */
+			GPIO17 AF0	/* CHG_SDA */
+		>;
+		pinctrl-single,bias-pullup = <PULL_UP>;
+	};
+
+	i2c2_sensor_pins: i2c2-sensor-pins {
+		pinctrl-single,pins = <
+			GPIO35 AF0	/* SENSOR_I2C_SCL */
+			GPIO36 AF0	/* SENSOR_I2C_SDA */
+		>;
+		pinctrl-single,low-power-mode = <LPM_DRIVE_HIGH LPM_MASK>;
+	};
+
+	i2c3_camera_pins: i2c3-camera-pins {
+		pinctrl-single,pins = <
+			GPIO53 AF2	/* CAM_SCL */
+			GPIO54 AF2	/* CAM_SDA */
+		>;
+		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
+	};
+
+	i2c4_touch_pins: i2c4-touch-pins {
+		pinctrl-single,pins = <
+			GPIO87 AF5	/* TSP_SCL */
+			GPIO88 AF5	/* TSP_SDA */
+		>;
+		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
+	};
+
+	sdh1_pins: sdh1-pins {
+		pinctrl-single,pins = <
+			MMC1_DAT0 AF0
+			MMC1_DAT1 AF0
+			MMC1_DAT2 AF0
+			MMC1_DAT3 AF0
+			MMC1_DAT4 AF0
+			MMC1_DAT5 AF0
+			MMC1_DAT6 AF0
+			MMC1_DAT7 AF0
+			MMC1_CMD  AF0
+			MMC1_CLK  AF0
+			MMC1_CD   AF1
+			MMC1_WP   AF1
+		>;
+		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
+	};
+
+	sdh2_wlan_pins: sdh2-wlan-pins {
+		pinctrl-single,pins = <
+			GPIO37 AF1	/* MMC2_DAT3 */
+			GPIO38 AF1	/* MMC2_DAT2 */
+			GPIO39 AF1	/* MMC2_DAT1 */
+			GPIO40 AF1	/* MMC2_DAT0 */
+			GPIO41 AF1	/* MMC2_CMD */
+			GPIO42 AF1	/* MMC2_CLK */
+		>;
+		pinctrl-single,drive-strength = <DS_FAST DS_MASK>;
+		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
+	};
+
+	sdh3_emmc_pins: sdh3-emmc-pins {
+		pinctrl-single,pins = <
+			DF_IO0 AF1	/* MMC3_DAT0 */
+			DF_IO1 AF1	/* MMC3_DAT1 */
+			DF_IO2 AF1	/* MMC3_DAT2 */
+			DF_IO3 AF1	/* MMC3_DAT3 */
+			DF_IO4 AF1	/* MMC3_DAT4 */
+			DF_IO5 AF1	/* MMC3_DAT5 */
+			DF_IO6 AF1	/* MMC3_DAT6 */
+			DF_IO7 AF1	/* MMC3_DAT7 */
+			DF_CLE_SM_OEN AF1 /* MMC3_CMD */
+			SM_SCLK AF1	/* MMC3_CLK */
+		>;
+		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,drive-strength = <DS_FAST DS_MASK>;
+		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
+	};
+
+	gpio_keys_pins: gpio-keys-pins {
+		pinctrl-single,pins = <
+			GPIO1 AF0	/* KEY_VOLUMEUP */
+			GPIO2 AF0	/* KEY_VOLUMEDOWN */
+		>;
+		pinctrl-single,bias-pullup = <PULL_UP>;
+		pinctrl-single,low-power-mode = <LPM_DRIVE_HIGH LPM_MASK>;
+	};
+
+	display_pins: display-pins {
+		pinctrl-single,pins = <
+			GPIO9  AF0	/* LCD_3P3_EN */
+			GPIO19 AF0	/* LVDS_3P3_EN */
+			GPIO20 AF0	/* LVDS_RST */
+			VCXO_REQ AF0	/* VCXO clock request */
+		>;
+		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
+	};
+
+	wlan_bt_ctrl_pins: wlan-bt-ctrl-pins {
+		pinctrl-single,pins = <
+			GPIO51 AF0	/* WLAN_PD */
+			GPIO83 AF0	/* HOST_WU_WLAN */
+			GPIO84 AF0	/* WLAN_WU_HOST */
+			GPIO85 AF0	/* WL_REG_ON */
+			GPIO86 AF0	/* BT_REG_ON */
+		>;
+		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
+	};
+};

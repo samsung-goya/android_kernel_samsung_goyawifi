@@ -9,6 +9,7 @@
 /dts-v1/;
 
 #include "pxa988.dtsi"
+#include "pxa986-samsung-goyawifi-pins.dtsi"
 
 / {
 	model = "Samsung Galaxy Tab 3 Lite 7.0 (SM-T110)";
@@ -100,12 +101,36 @@
 	};
 };
 
+/* MFPR Pin Controller */
+&pmx {
+	status = "okay";
+};
+
+/* GPIO Controller */
+&gpio {
+	status = "okay";
+};
+
+/* Peripheral DMA */
+&pdma0 {
+	status = "okay";
+};
+
+/* Audio SRAM TDMA */
+&adma0 {
+	status = "okay";
+};
+
 /* Debug UART (UART1 -> ttyS0) */
 &uart1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart1_pins>;
 	status = "okay";
 };
 
 /* GPS UART (UART2 -> ttyS1) */
 &uart2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart2_pins>;
 	status = "okay";
 };
