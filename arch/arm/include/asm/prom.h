@@ -16,6 +16,14 @@
 extern const struct machine_desc *setup_machine_fdt(unsigned int dt_phys);
 extern void __init arm_dt_init_cpu_maps(void);
 
+#ifdef CONFIG_ARM_SAMSUNG_PXA_BOOTFIXUP
+void __init samsung_pxa_fixup_boot_fdt(void *blob, phys_addr_t dt_phys);
+#else
+static inline void samsung_pxa_fixup_boot_fdt(void *blob, phys_addr_t dt_phys)
+{
+}
+#endif
+
 #else /* CONFIG_OF */
 
 static inline const struct machine_desc *setup_machine_fdt(unsigned int dt_phys)

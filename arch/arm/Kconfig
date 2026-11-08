@@ -1902,7 +1902,7 @@ config ARM_APPENDED_DTB
 
 config ARM_ATAG_DTB_COMPAT
 	bool "Supplement the appended DTB with traditional ATAG information"
-	depends on ARM_APPENDED_DTB
+	depends on ARM_APPENDED_DTB && !ARM_SAMSUNG_PXA_BOOTFIXUP
 	help
 	  Some old bootloaders can't be updated to a DTB capable one, yet
 	  they provide ATAGs with memory configuration, the ramdisk address,
@@ -1911,6 +1911,23 @@ config ARM_ATAG_DTB_COMPAT
 	  DTB.  To allow a device tree enabled kernel to be used with such
 	  bootloaders, this option allows zImage to extract the information
 	  from the ATAG list and store it at run time into the appended DTB.
+
+config ARM_SAMSUNG_PXA_BOOTFIXUP
+	bool "Samsung PXA986/PXA988 bootloader FDT and initramfs handoff fixup"
+	depends on ARM_APPENDED_DTB
+	help
+	  Samsung bootloaders on PXA986/PXA988 boards (such as the SM-T110
+	  goyawifi) load the zImage at 0x10008000 while physical RAM starts
+	  at 0x00000000 (with a 1 MiB OBM carveout), ignore the Android
+	  boot.img command line, and pass an obsolete initrd address.
+
+	  Enabling this option sets TEXT_OFFSET to 0x00108000, decompresses
+	  the kernel relative to physical address 0x00000000, and derives
+	  the initramfs address from the appended FDT tail space prepared
+	  by goyawifi-mkbootimg.py.
+
+	  Say N if building for standard bootloaders or Android boot images
+	  that do not use the FDT-tail initramfs packer.
 
 choice
 	prompt "Kernel command line type" if ARM_ATAG_DTB_COMPAT

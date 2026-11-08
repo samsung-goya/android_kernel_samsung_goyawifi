@@ -193,6 +193,10 @@ not_angel:
 		.text
 
 #ifdef CONFIG_AUTO_ZRELADDR
+#ifdef CONFIG_ARM_SAMSUNG_PXA_BOOTFIXUP
+		/* SM-T110 loader puts zImage at 0x10008000; low RAM starts at 0. */
+		mov	r4, #0
+#else
 		/*
 		 * Find the start of physical memory.  As we are executing
 		 * without the MMU on, we are in the physical address space.
@@ -212,6 +216,7 @@ not_angel:
 		 */
 		mov	r4, pc
 		and	r4, r4, #0xf8000000
+#endif
 		/* Determine final kernel image address. */
 		add	r4, r4, #TEXT_OFFSET
 #else
