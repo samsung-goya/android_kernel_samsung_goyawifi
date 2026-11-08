@@ -1,0 +1,90 @@
+/* SPDX-License-Identifier: (GPL-2.0-only OR BSD-2-Clause) */
+#ifndef __DTS_MARVELL_PXA988_CLOCK_H
+#define __DTS_MARVELL_PXA988_CLOCK_H
+
+/* fixed clocks and plls */
+#define PXA988_CLK_CLK32		1
+#define PXA988_CLK_VCTCXO		2
+#define PXA988_CLK_PLL1_416		3
+#define PXA988_CLK_PLL1_624		4
+#define PXA988_CLK_PLL1_1248		5
+#define PXA988_CLK_PLL1_416_GATE	6
+#define PXA988_CLK_PLL1_624_GATE	7
+#define PXA988_CLK_PLL1_2		8
+#define PXA988_CLK_PLL1_4		9
+#define PXA988_CLK_PLL1_8		10
+#define PXA988_CLK_PLL1_16		11
+#define PXA988_CLK_PLL1_6		12
+#define PXA988_CLK_PLL1_12		13
+#define PXA988_CLK_PLL1_24		14
+#define PXA988_CLK_PLL1_48		15
+#define PXA988_CLK_PLL1_96		16
+#define PXA988_CLK_PLL1_13		17
+#define PXA988_CLK_PLL1_13_1_5		18
+#define PXA988_CLK_PLL1_2_1_5		19
+#define PXA988_CLK_PLL1_3_16		20
+#define PXA988_CLK_PLL1_192		21
+#define PXA988_CLK_PLL2_VCO		22
+#define PXA988_CLK_PLL2			23
+#define PXA988_CLK_PLL2P		24
+#define PXA988_CLK_PLL3_VCO		25
+#define PXA988_CLK_PLL3			26
+#define PXA988_CLK_PLL3P		27
+#define PXA988_CLK_UART_PLL		28
+#define PXA988_CLK_USB_PLL		29
+
+/* core / bus clocks */
+#define PXA988_CLK_CPU			40
+#define PXA988_CLK_TWD			41
+#define PXA988_CLK_DDR			42
+#define PXA988_CLK_AXI			43
+
+/* apbc & apbcp peripherals */
+#define PXA988_CLK_TWSI0		60
+#define PXA988_CLK_TWSI1		61
+#define PXA988_CLK_TWSI2		62
+#define PXA988_CLK_GPIO			64
+#define PXA988_CLK_KPC			65
+#define PXA988_CLK_RTC			66
+#define PXA988_CLK_PWM0			67
+#define PXA988_CLK_PWM1			68
+#define PXA988_CLK_PWM2			69
+#define PXA988_CLK_PWM3			70
+#define PXA988_CLK_UART0		71
+#define PXA988_CLK_UART1		72
+#define PXA988_CLK_UART2		73
+#define PXA988_CLK_SSP0			74
+#define PXA988_CLK_SSP1			75
+#define PXA988_CLK_TIMER0		76
+#define PXA988_CLK_TIMER1		77
+#define PXA988_CLK_THERMAL		78
+#define PXA988_CLK_GSSP			79
+#define PXA988_CLK_IPC			80
+#define PXA988_CLK_RIPC			81
+
+/* apmu axi peripherals */
+#define PXA988_CLK_DFC			100
+#define PXA988_CLK_SDH_AXI		101
+#define PXA988_CLK_SDH0			102
+#define PXA988_CLK_SDH1			103
+#define PXA988_CLK_SDH2			104
+#define PXA988_CLK_USB			105
+#define PXA988_CLK_LCD_HCLK		106
+#define PXA988_CLK_LCD_AXI		107
+#define PXA988_CLK_LCD			108
+#define PXA988_CLK_DSI_PHY		109
+#define PXA988_CLK_DSI_ESC		110
+#define PXA988_CLK_CCIC_AXI		111
+#define PXA988_CLK_CCIC0		112
+#define PXA988_CLK_CCIC0_PHY		113
+#define PXA988_CLK_CCIC0_SPHY		114
+#define PXA988_CLK_VPU_AXI		115
+#define PXA988_CLK_VPU			116
+#define PXA988_CLK_GC_AXI		117
+#define PXA988_CLK_GC			118
+#define PXA988_CLK_GC2D			119
+#define PXA988_CLK_GC_SHADER		120
+
+#define PXA988_NR_CLKS			160
+
+#endif /* __DTS_MARVELL_PXA988_CLOCK_H */
