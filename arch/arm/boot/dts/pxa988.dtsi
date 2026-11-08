@@ -8,6 +8,7 @@
 #include <dt-bindings/interrupt-controller/arm-gic.h>
 #include <dt-bindings/interrupt-controller/irq.h>
 #include <dt-bindings/clock/marvell,pxa988.h>
+#include <dt-bindings/pinctrl/marvell,pxa988-pinfunc.h>
 
 / {
 	compatible = "marvell,pxa988";
@@ -47,6 +48,19 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 		ranges;
+
+		sram: sram@d1004000 {
+			compatible = "mmio-sram";
+			reg = <0xd1004000 0xaa00>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges = <0 0xd1004000 0xaa00>;
+
+			asram: asram-section@0 {
+				reg = <0x0 0xaa00>;
+				pool;
+			};
+		};
 
 		L2: cache-controller@d1dfb000 {
 			compatible = "arm,pl310-cache";
@@ -106,6 +120,14 @@
 				reg = <0xd4282000 0x1000>;
 				status = "disabled";
 			};
+
+			adma0: dma-controller@d42a0800 {
+				compatible = "marvell,adma-1.0", "marvell,pxa910-squ";
+				reg = <0xd42a0800 0x100>;
+				interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
+				#dma-cells = <1>;
+				asram = <&asram>;
+			};
 		};
 
 		apb@d4000000 {
@@ -114,6 +136,14 @@
 			#size-cells = <1>;
 			reg = <0xd4000000 0x00200000>;
 			ranges;
+
+			pdma0: dma-controller@d4000000 {
+				compatible = "marvell,pdma-1.0";
+				reg = <0xd4000000 0x10000>;
+				interrupts = <GIC_SPI 47 IRQ_TYPE_LEVEL_HIGH>;
+				#dma-cells = <1>;
+				#dma-channels = <32>;
+			};
 
 			timer0: timer@d4014000 {
 				compatible = "mrvl,mmp-timer";
@@ -140,6 +170,9 @@
 				interrupts = <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&soc_clocks PXA988_CLK_UART0>;
 				resets = <&soc_clocks PXA988_CLK_UART0>;
+				dmas = <&pdma0 21
+					&pdma0 22>;
+				dma-names = "rx", "tx";
 				status = "disabled";
 			};
 
@@ -151,6 +184,9 @@
 				interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&soc_clocks PXA988_CLK_UART1>;
 				resets = <&soc_clocks PXA988_CLK_UART1>;
+				dmas = <&pdma0 23
+					&pdma0 24>;
+				dma-names = "rx", "tx";
 				status = "disabled";
 			};
 
@@ -162,18 +198,44 @@
 				interrupts = <GIC_SPI 24 IRQ_TYPE_LEVEL_HIGH>;
 				clocks = <&soc_clocks PXA988_CLK_UART2>;
 				resets = <&soc_clocks PXA988_CLK_UART2>;
+				dmas = <&pdma0 4
+					&pdma0 5>;
+				dma-names = "rx", "tx";
 				status = "disabled";
 			};
 
-			/* Pinmux controller stub; populated in Phase 04 */
-			pinmux: pinmux@d401e000 {
-				compatible = "pinctrl-single";
+			gpio: gpio@d4019000 {
+				compatible = "marvell,mmp-gpio";
+				reg = <0xd4019000 0x800>;
+				interrupts = <GIC_SPI 49 IRQ_TYPE_LEVEL_HIGH>;
+				interrupt-names = "gpio_mux";
+				gpio-controller;
+				#gpio-cells = <2>;
+				interrupt-controller;
+				#interrupt-cells = <2>;
+				clocks = <&soc_clocks PXA988_CLK_GPIO>;
+				resets = <&soc_clocks PXA988_CLK_GPIO>;
+				gpio-ranges = <&pmx 0 0 128>;
+			};
+
+			pmx: pinmux@d401e000 {
+				compatible = "pinconf-single";
 				reg = <0xd401e000 0x0330>;
 				#address-cells = <1>;
 				#size-cells = <0>;
+				#pinctrl-cells = <1>;
+				#gpio-range-cells = <3>;
+
 				pinctrl-single,register-width = <32>;
-				pinctrl-single,function-mask = <0xffff>;
-				status = "disabled";
+				pinctrl-single,function-mask = <7>;
+
+				pinctrl-single,gpio-range = <
+					&range 0 128 0
+				>;
+
+				range: gpio-range {
+					#pinctrl-single,gpio-range-cells = <3>;
+				};
 			};
 		};
 	};
