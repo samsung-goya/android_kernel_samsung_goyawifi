@@ -1,0 +1,111 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Samsung Galaxy Tab 3 Lite 7.0 Wi-Fi (SM-T110 / goyawifi) Device Tree
+ *
+ * SoC: Marvell PXA986 (PXA988 family, dual Cortex-A9 r3p0)
+ * RAM: 1 GiB LPDDR2 @ 0x00000000
+ */
+
+/dts-v1/;
+
+#include "pxa988.dtsi"
+
+/ {
+	model = "Samsung Galaxy Tab 3 Lite 7.0 (SM-T110)";
+	compatible = "samsung,goyawifi", "marvell,pxa986", "marvell,pxa988";
+
+	chosen {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+		bootargs = "console=ttyS0,115200 console=tty0 earlyprintk panic=10";
+		stdout-path = "serial0:115200n8";
+
+		framebuffer0: framebuffer@17000000 {
+			compatible = "simple-framebuffer";
+			reg = <0x17000000 (1024 * 600 * 4)>;
+			width = <1024>;
+			height = <600>;
+			stride = <4096>;
+			format = "a8r8g8b8";
+			status = "okay";
+		};
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x40000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/*
+		 * 0x00000000..0x000fffff: Marvell OBM / secure boot ROM area
+		 * (covered by TEXT_OFFSET = 0x00108000, reserved as no-map).
+		 */
+		obm_reserved: obm@0 {
+			reg = <0x00000000 0x00100000>;
+			no-map;
+		};
+
+		/*
+		 * 0x06000000..0x080fffff: CP / MSA carveout (32 MiB) +
+		 * 1 MiB OBM / shared parameter page at 0x08000000.
+		 */
+		cp_reserved: cp@6000000 {
+			reg = <0x06000000 0x02100000>;
+			no-map;
+		};
+
+		/*
+		 * 0x08100000..0x0817ffff: ramoops / persistent_ram (512 KiB).
+		 *
+		 * With record-size = <0> and console-size = <0x00040000>,
+		 * Linux 4.19 places the 256 KiB RS8-ECC console ring buffer
+		 * right at 0x08100000 with signature 0x43474244 ("DBGC"),
+		 * matching TWRP recovery's /proc/last_kmsg reader byte-for-byte.
+		 */
+		ramoops: ramoops@8100000 {
+			compatible = "ramoops";
+			reg = <0x08100000 0x00080000>;
+			record-size = <0>;
+			console-size = <0x00040000>;
+			ftrace-size = <0x00020000>;
+			pmsg-size = <0x00020000>;
+			ecc-size = <16>;
+			unbuffered;
+			no-map;
+		};
+
+		/*
+		 * 0x08180000..0x08ffffff: Remainder of vendor diagnostics /
+		 * CMSA region kept untouched during early bring-up.
+		 */
+		diag_reserved: diagnostics@8180000 {
+			reg = <0x08180000 0x00e80000>;
+			no-map;
+		};
+
+		/*
+		 * 0x17000000..0x177fffff: Bootloader scanout framebuffer (8 MiB).
+		 * Marked no-map so simplefb's ioremap_wc() succeeds on ARMv7.
+		 */
+		framebuffer_reserved: framebuffer@17000000 {
+			reg = <0x17000000 0x00800000>;
+			no-map;
+		};
+	};
+};
+
+/* Debug UART (UART1 -> ttyS0) */
+&uart1 {
+	status = "okay";
+};
+
+/* GPS UART (UART2 -> ttyS1) */
+&uart2 {
+	status = "okay";
+};

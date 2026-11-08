@@ -1,0 +1,202 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * Marvell PXA988 / PXA986 (dual Cortex-A9) SoC Device Tree
+ *
+ * Copyright (C) 2012-2013 Marvell International Ltd.
+ */
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include <dt-bindings/interrupt-controller/irq.h>
+
+/ {
+	compatible = "marvell,pxa988";
+	#address-cells = <1>;
+	#size-cells = <1>;
+	interrupt-parent = <&gic>;
+
+	aliases {
+		serial0 = &uart1;
+		serial1 = &uart2;
+		serial2 = &uart3;
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a9";
+			reg = <0>;
+			next-level-cache = <&L2>;
+		};
+
+		/* CPU1 kept disabled in Phase 03; enabled in Phase 05 (SMP) */
+		cpu1: cpu@1 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a9";
+			reg = <1>;
+			next-level-cache = <&L2>;
+			status = "disabled";
+		};
+	};
+
+	/*
+	 * Temporary fixed-rate clocks for Phase 03 minimal bring-up before
+	 * Phase 04 (clk-pxa988 CCF provider) is wired in.
+	 */
+	clocks {
+		uart_clk: clock-uart {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <14745600>;
+			clock-output-names = "uart_14m7";
+		};
+
+		twd_clk: clock-twd {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			/* Boot CPU0 runs at 624 or 1200 MHz; PERIPHCLK = CPU/8 */
+			clock-frequency = <150000000>;
+			clock-output-names = "twd_periphclk";
+		};
+
+		timer_3m25_clk: clock-timer-3m25 {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <3250000>;
+			clock-output-names = "timer_3m25";
+		};
+
+		apb_26m_clk: clock-apb-26m {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <26000000>;
+			clock-output-names = "apb_26m";
+		};
+
+		clk_32k: clock-32k {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <32768>;
+			clock-output-names = "clk_32k";
+		};
+	};
+
+	soc {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		L2: cache-controller@d1dfb000 {
+			compatible = "arm,pl310-cache";
+			reg = <0xd1dfb000 0x1000>;
+			cache-unified;
+			cache-level = <2>;
+			arm,data-latency = <2 1 1>;
+			arm,tag-latency = <2 1 1>;
+			arm,Standby-mode;
+			arm,dynamic-clock-gating;
+		};
+
+		scu@d1dfe000 {
+			compatible = "arm,cortex-a9-scu";
+			reg = <0xd1dfe000 0x100>;
+		};
+
+		local-timer@d1dfe600 {
+			compatible = "arm,cortex-a9-twd-timer";
+			reg = <0xd1dfe600 0x20>;
+			interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(2) | IRQ_TYPE_EDGE_RISING)>;
+		};
+
+		gic: interrupt-controller@d1dff000 {
+			compatible = "arm,cortex-a9-gic";
+			#interrupt-cells = <3>;
+			#address-cells = <0>;
+			interrupt-controller;
+			reg = <0xd1dff000 0x1000>,
+			      <0xd1dfe100 0x0100>;
+		};
+
+		axi@d4200000 {
+			compatible = "mrvl,axi-bus", "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0xd4200000 0x00200000>;
+			ranges;
+
+			/* ICU / WakeupGen stub for Phase 05 SMP & PM */
+			wakeupgen: interrupt-controller@d4282000 {
+				compatible = "marvell,pxa988-wakeupgen";
+				reg = <0xd4282000 0x1000>;
+				status = "disabled";
+			};
+		};
+
+		apb@d4000000 {
+			compatible = "mrvl,apb-bus", "simple-bus";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0xd4000000 0x00200000>;
+			ranges;
+
+			timer0: timer@d4014000 {
+				compatible = "mrvl,mmp-timer";
+				reg = <0xd4014000 0x100>;
+				interrupts = <GIC_SPI 13 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&timer_3m25_clk>;
+			};
+
+			timer1: timer@d4016000 {
+				compatible = "mrvl,mmp-timer";
+				reg = <0xd4016000 0x100>;
+				interrupts = <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&timer_3m25_clk>;
+				status = "disabled";
+			};
+
+			uart1: serial@d4017000 {
+				compatible = "mrvl,mmp-uart";
+				reg = <0xd4017000 0x1000>;
+				reg-shift = <2>;
+				reg-io-width = <4>;
+				interrupts = <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&uart_clk>;
+				status = "disabled";
+			};
+
+			uart2: serial@d4018000 {
+				compatible = "mrvl,mmp-uart";
+				reg = <0xd4018000 0x1000>;
+				reg-shift = <2>;
+				reg-io-width = <4>;
+				interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&uart_clk>;
+				status = "disabled";
+			};
+
+			uart3: serial@d4036000 {
+				compatible = "mrvl,mmp-uart";
+				reg = <0xd4036000 0x1000>;
+				reg-shift = <2>;
+				reg-io-width = <4>;
+				interrupts = <GIC_SPI 24 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&uart_clk>;
+				status = "disabled";
+			};
+
+			/* Pinmux controller stub; populated in Phase 04 */
+			pinmux: pinmux@d401e000 {
+				compatible = "pinctrl-single";
+				reg = <0xd401e000 0x0330>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				pinctrl-single,register-width = <32>;
+				pinctrl-single,function-mask = <0xffff>;
+				status = "disabled";
+			};
+		};
+	};
+};
