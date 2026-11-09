@@ -53,10 +53,12 @@
 #define PM800_BUCK2		(0x40)
 #define PM800_BUCK3		(0x41)
 #define PM800_BUCK4		(0x42)
+#define PM822_BUCK4		(0x45)
 #define PM800_BUCK4_1		(0x43)
 #define PM800_BUCK4_2		(0x44)
 #define PM800_BUCK4_3		(0x45)
 #define PM800_BUCK5		(0x46)
+#define PM822_MISC_EN1		(0x54)
 
 #define PM800_BUCK_ENA		(0x50)
 #define PM800_LDO_ENA1_1	(0x51)
@@ -153,6 +155,11 @@ static const struct regulator_linear_range buck2_5_volt_range[] = {
 	REGULATOR_LINEAR_RANGE(1600000, 0x50, 0x72, 50000),
 };
 
+static const struct regulator_linear_range buck5_volt_range_pm822[] = {
+	REGULATOR_LINEAR_RANGE(600000, 0, 0x4f, 12500),
+	REGULATOR_LINEAR_RANGE(1600000, 0x50, 0x7f, 50000),
+};
+
 static const unsigned int ldo1_volt_table[] = {
 	600000,  650000,  700000,  750000,  800000,  850000,  900000,  950000,
 	1000000, 1050000, 1100000, 1150000, 1200000, 1300000, 1400000, 1500000,
@@ -171,6 +178,16 @@ static const unsigned int ldo3_17_volt_table[] = {
 /* LDO 18~19 have same voltage table. */
 static const unsigned int ldo18_19_volt_table[] = {
 	1700000, 1800000, 1900000, 2500000, 2800000, 2900000, 3100000, 3300000,
+};
+
+static const unsigned int ldo1_2_volt_table_pm822[] = {
+	1700000, 1800000, 1900000, 2500000, 2800000, 2900000, 3100000, 3300000,
+};
+
+static const struct regulator_ops pm822_switch_ops = {
+	.enable			= regulator_enable_regmap,
+	.disable		= regulator_disable_regmap,
+	.is_enabled		= regulator_is_enabled_regmap,
 };
 
 static int pm800_get_current_limit(struct regulator_dev *rdev)
@@ -231,14 +248,83 @@ static struct pm800_regulator_info pm800_regulator_info[] = {
 	PM800_LDO(ldo19, LDO19, LDO_ENA1_3, 2, 200000, ldo18_19_volt_table),
 };
 
+#define PM822_BUCK(match, vreg, vsel, ereg, ebit, amax, volt_ranges, n_volt) \
+{									\
+	.desc	= {							\
+		.name			= #vreg,			\
+		.of_match		= of_match_ptr(#match),		\
+		.regulators_node	= of_match_ptr("regulators"),	\
+		.ops			= &pm800_volt_range_ops,	\
+		.type			= REGULATOR_VOLTAGE,		\
+		.id			= PM800_ID_##vreg,		\
+		.owner			= THIS_MODULE,			\
+		.n_voltages		= n_volt,			\
+		.linear_ranges		= volt_ranges,			\
+		.n_linear_ranges	= ARRAY_SIZE(volt_ranges),	\
+		.vsel_reg		= vsel,				\
+		.vsel_mask		= 0x7f,				\
+		.enable_reg		= PM800_##ereg,			\
+		.enable_mask		= 1 << (ebit),			\
+	},								\
+	.max_ua	= (amax),						\
+}
+
+#define PM822_SWITCH(match, vreg, ereg, ebit)				\
+{									\
+	.desc	= {							\
+		.name			= #vreg,			\
+		.of_match		= of_match_ptr(#match),		\
+		.regulators_node	= of_match_ptr("regulators"),	\
+		.ops			= &pm822_switch_ops,		\
+		.type			= REGULATOR_VOLTAGE,		\
+		.id			= 19,				\
+		.owner			= THIS_MODULE,			\
+		.enable_reg		= ereg,				\
+		.enable_mask		= 1 << (ebit),			\
+	},								\
+}
+
+static struct pm800_regulator_info pm822_regulator_info[] = {
+	PM822_BUCK(buck1, BUCK1, PM800_BUCK1, BUCK_ENA, 0, 3500000, buck1_volt_range, 0x55),
+	PM822_BUCK(buck2, BUCK2, PM800_BUCK2, BUCK_ENA, 1, 750000, buck2_5_volt_range, 0x73),
+	PM822_BUCK(buck3, BUCK3, PM800_BUCK3, BUCK_ENA, 2, 1500000, buck2_5_volt_range, 0x73),
+	PM822_BUCK(buck4, BUCK4, PM822_BUCK4, BUCK_ENA, 3, 750000, buck2_5_volt_range, 0x73),
+	PM822_BUCK(buck5, BUCK5, PM800_BUCK5, BUCK_ENA, 4, 1500000, buck5_volt_range_pm822, 0x80),
+
+	PM800_LDO(ldo1, LDO1, LDO_ENA1_1, 0, 100000, ldo1_2_volt_table_pm822),
+	PM800_LDO(ldo2, LDO2, LDO_ENA1_1, 1, 100000, ldo1_2_volt_table_pm822),
+	PM800_LDO(ldo3, LDO3, LDO_ENA1_1, 2, 400000, ldo3_17_volt_table),
+	PM800_LDO(ldo4, LDO4, LDO_ENA1_1, 3, 400000, ldo3_17_volt_table),
+	PM800_LDO(ldo5, LDO5, LDO_ENA1_1, 4, 200000, ldo3_17_volt_table),
+	PM800_LDO(ldo6, LDO6, LDO_ENA1_1, 5, 200000, ldo3_17_volt_table),
+	PM800_LDO(ldo7, LDO7, LDO_ENA1_1, 6, 100000, ldo3_17_volt_table),
+	PM800_LDO(ldo8, LDO8, LDO_ENA1_1, 7, 100000, ldo3_17_volt_table),
+	PM800_LDO(ldo9, LDO9, LDO_ENA1_2, 0, 200000, ldo3_17_volt_table),
+	PM800_LDO(ldo10, LDO10, LDO_ENA1_2, 1, 400000, ldo3_17_volt_table),
+	PM800_LDO(ldo11, LDO11, LDO_ENA1_2, 2, 200000, ldo3_17_volt_table),
+	PM800_LDO(ldo12, LDO12, LDO_ENA1_2, 3, 400000, ldo1_volt_table),
+	PM800_LDO(ldo13, LDO13, LDO_ENA1_2, 4, 100000, ldo1_2_volt_table_pm822),
+	PM800_LDO(ldo14, LDO14, LDO_ENA1_2, 5, 80000, ldo2_volt_table),
+	PM822_SWITCH(voutsw, VOUTSW, PM822_MISC_EN1, 4),
+};
+
 static int pm800_regulator_probe(struct platform_device *pdev)
 {
 	struct pm80x_chip *chip = dev_get_drvdata(pdev->dev.parent);
 	struct pm80x_platform_data *pdata = dev_get_platdata(pdev->dev.parent);
 	struct pm800_regulators *pm800_data;
+	struct pm800_regulator_info *info;
 	struct regulator_config config = { };
 	struct regulator_init_data *init_data;
-	int i, ret;
+	int i, ret, max_regulator;
+
+	if (chip->type == CHIP_PM822) {
+		info = pm822_regulator_info;
+		max_regulator = ARRAY_SIZE(pm822_regulator_info);
+	} else {
+		info = pm800_regulator_info;
+		max_regulator = ARRAY_SIZE(pm800_regulator_info);
+	}
 
 	if (pdata && pdata->num_regulators) {
 		unsigned int count = 0;
@@ -264,7 +350,7 @@ static int pm800_regulator_probe(struct platform_device *pdev)
 
 	config.dev = chip->dev;
 	config.regmap = pm800_data->map;
-	for (i = 0; i < PM800_ID_RG_MAX; i++) {
+	for (i = 0; i < max_regulator; i++) {
 		struct regulator_dev *regulator;
 
 		if (pdata && pdata->num_regulators) {
@@ -275,14 +361,14 @@ static int pm800_regulator_probe(struct platform_device *pdev)
 			config.init_data = init_data;
 		}
 
-		config.driver_data = &pm800_regulator_info[i];
+		config.driver_data = &info[i];
 
 		regulator = devm_regulator_register(&pdev->dev,
-				&pm800_regulator_info[i].desc, &config);
+				&info[i].desc, &config);
 		if (IS_ERR(regulator)) {
 			ret = PTR_ERR(regulator);
 			dev_err(&pdev->dev, "Failed to register %s\n",
-					pm800_regulator_info[i].desc.name);
+					info[i].desc.name);
 			return ret;
 		}
 	}
@@ -290,9 +376,17 @@ static int pm800_regulator_probe(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id pm800_regulator_of_match[] = {
+	{ .compatible = "marvell,88pm80x-regulator" },
+	{ .compatible = "marvell,88pm822-regulator" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, pm800_regulator_of_match);
+
 static struct platform_driver pm800_regulator_driver = {
 	.driver		= {
 		.name	= "88pm80x-regulator",
+		.of_match_table = of_match_ptr(pm800_regulator_of_match),
 	},
 	.probe		= pm800_regulator_probe,
 };
@@ -301,5 +395,6 @@ module_platform_driver(pm800_regulator_driver);
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Joseph(Yossi) Hanin <yhanin@marvell.com>");
-MODULE_DESCRIPTION("Regulator Driver for Marvell 88PM800 PMIC");
+MODULE_DESCRIPTION("Regulator Driver for Marvell 88PM800/88PM822 PMIC");
 MODULE_ALIAS("platform:88pm800-regulator");
+MODULE_ALIAS("platform:88pm822-regulator");
