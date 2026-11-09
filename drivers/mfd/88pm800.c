@@ -27,6 +27,10 @@
 #include <linux/mfd/core.h>
 #include <linux/mfd/88pm80x.h>
 #include <linux/slab.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
+#include <linux/reboot.h>
+#include <linux/delay.h>
 
 /* Interrupt Registers */
 #define PM800_INT_STATUS1		(0x05)
@@ -116,10 +120,18 @@ enum {
 #define PM800_CHIP_GEN_ID_NUM	0x3
 
 static const struct i2c_device_id pm80x_id_table[] = {
-	{"88PM800", 0},
+	{"88PM800", CHIP_PM800},
+	{"88PM822", CHIP_PM822},
 	{} /* NULL terminated */
 };
 MODULE_DEVICE_TABLE(i2c, pm80x_id_table);
+
+static const struct of_device_id pm800_of_match[] = {
+	{ .compatible = "marvell,88pm800", .data = (void *)CHIP_PM800 },
+	{ .compatible = "marvell,88pm822", .data = (void *)CHIP_PM822 },
+	{},
+};
+MODULE_DEVICE_TABLE(of, pm800_of_match);
 
 static struct resource rtc_resources[] = {
 	{
@@ -133,6 +145,7 @@ static struct resource rtc_resources[] = {
 static struct mfd_cell rtc_devs[] = {
 	{
 	 .name = "88pm80x-rtc",
+	 .of_compatible = "marvell,88pm80x-rtc",
 	 .num_resources = ARRAY_SIZE(rtc_resources),
 	 .resources = &rtc_resources[0],
 	 .id = -1,
@@ -151,6 +164,7 @@ static struct resource onkey_resources[] = {
 static const struct mfd_cell onkey_devs[] = {
 	{
 	 .name = "88pm80x-onkey",
+	 .of_compatible = "marvell,88pm80x-onkey",
 	 .num_resources = 1,
 	 .resources = &onkey_resources[0],
 	 .id = -1,
@@ -160,6 +174,7 @@ static const struct mfd_cell onkey_devs[] = {
 static const struct mfd_cell regulator_devs[] = {
 	{
 	 .name = "88pm80x-regulator",
+	 .of_compatible = "marvell,88pm80x-regulator",
 	 .id = -1,
 	},
 };
@@ -244,6 +259,149 @@ static const struct regmap_irq pm800_irqs[] = {
 		.mask = PM800_GPIO4_INT_ENA4,
 	},
 };
+
+static const struct regmap_irq pm822_irqs[] = {
+	/* INT0 */
+	[PM800_IRQ_ONKEY] = {
+		.mask = PM800_ONKEY_INT_ENA1,
+	},
+	[PM800_IRQ_EXTON] = {
+		.mask = 0,
+	},
+	[PM800_IRQ_CHG] = {
+		.mask = PM800_CHG_INT_ENA1,
+	},
+	[PM800_IRQ_BAT] = {
+		.mask = PM800_BAT_INT_ENA1,
+	},
+	[PM800_IRQ_RTC] = {
+		.mask = PM800_RTC_INT_ENA1,
+	},
+	[PM800_IRQ_CLASSD] = {
+		.mask = PM800_CLASSD_OC_INT_ENA1,
+	},
+	/* INT1 */
+	[PM800_IRQ_VBAT] = {
+		.reg_offset = 1,
+		.mask = PM800_VBAT_INT_ENA2,
+	},
+	[PM800_IRQ_VSYS] = {
+		.reg_offset = 1,
+		.mask = PM800_VSYS_INT_ENA2,
+	},
+	[PM800_IRQ_VCHG] = {
+		.reg_offset = 1,
+		.mask = 0,
+	},
+	[PM800_IRQ_TINT] = {
+		.reg_offset = 1,
+		.mask = PM800_TINT_INT_ENA2,
+	},
+	/* INT2 */
+	[PM800_IRQ_GPADC0] = {
+		.reg_offset = 2,
+		.mask = PM800_GPADC0_INT_ENA3,
+	},
+	[PM800_IRQ_GPADC1] = {
+		.reg_offset = 2,
+		.mask = PM800_GPADC1_INT_ENA3,
+	},
+	[PM800_IRQ_GPADC2] = {
+		.reg_offset = 2,
+		.mask = PM800_GPADC2_INT_ENA3,
+	},
+	[PM800_IRQ_GPADC3] = {
+		.reg_offset = 2,
+		.mask = PM800_GPADC3_INT_ENA3,
+	},
+	[PM800_IRQ_GPADC4] = {
+		.reg_offset = 2,
+		.mask = 0,
+	},
+};
+
+static struct regmap_irq_chip pm822_irq_chip = {
+	.name = "88pm822",
+	.irqs = pm822_irqs,
+	.num_irqs = ARRAY_SIZE(pm822_irqs),
+	.num_regs = 3,
+	.status_base = PM800_INT_STATUS1,
+	.mask_base = PM800_INT_ENA_1,
+	.ack_base = PM800_INT_STATUS1,
+	.mask_invert = 1,
+};
+
+static struct regmap *pm822_base_map;
+
+static int pm822_reboot_notifier(struct notifier_block *nb,
+				 unsigned long action, void *data)
+{
+	const char *cmd = data;
+	unsigned int val = 0;
+
+	if (!pm822_base_map)
+		return NOTIFY_DONE;
+
+	if (cmd && !strcmp(cmd, "recovery"))
+		val = PM822_REBOOT_RECOVERY;
+
+	regmap_update_bits(pm822_base_map, PM822_GENERAL_USE_REG, 0x1f, val);
+	return NOTIFY_DONE;
+}
+
+static struct notifier_block pm822_reboot_nb = {
+	.notifier_call = pm822_reboot_notifier,
+};
+
+static void pm822_poweroff(void)
+{
+	if (!pm822_base_map)
+		return;
+
+	pr_emerg("88pm822: powering off system...\n");
+	regmap_write(pm822_base_map, PM822_GENERAL_USE_REG,
+		     PM822_SHUTDOWN_BY_POWEROFF);
+	regmap_update_bits(pm822_base_map, PM800_WAKEUP1,
+			   BIT(5), BIT(5));
+	mdelay(1000);
+	pr_emerg("88pm822: still powered after poweroff command, rebooting\n");
+	machine_restart(NULL);
+}
+
+static int device_gpadc_init_822(struct pm80x_chip *chip)
+{
+	struct pm80x_subchip *subchip = chip->subchip;
+	struct regmap *map = subchip->regmap_gpadc;
+	int ret;
+
+	if (!map) {
+		dev_warn(chip->dev, "Warning: 88pm822 gpadc regmap is not available!\n");
+		return -EINVAL;
+	}
+
+	ret = regmap_update_bits(map, PM800_GPADC_MISC_CONFIG2,
+				 PM800_GPADC_MISC_GPFSM_EN,
+				 PM800_GPADC_MISC_GPFSM_EN);
+	if (ret < 0)
+		return ret;
+
+	ret = regmap_update_bits(map, PM800_GPADC_MEAS_EN1,
+				 PM800_MEAS_EN1_VBAT, PM800_MEAS_EN1_VBAT);
+	if (ret < 0)
+		return ret;
+
+	ret = regmap_update_bits(map, PM800_GPADC_MEAS_EN2,
+				 PM800_MEAS_GP2_EN, PM800_MEAS_GP2_EN);
+	if (ret < 0)
+		return ret;
+
+	ret = regmap_update_bits(map, 0x0D, 0x0F, 0x06);
+	if (ret < 0)
+		return ret;
+
+	dev_info(chip->dev, "88pm822: GPADC initialized (VBAT + GPADC2 NTC)\n");
+	return 0;
+}
 
 static int device_gpadc_init(struct pm80x_chip *chip,
 				       struct pm80x_platform_data *pdata)
@@ -498,13 +656,21 @@ static int device_800_init(struct pm80x_chip *chip,
 			pdata->rtc->rtc_wakeup = 1;
 	}
 
-	ret = device_gpadc_init(chip, pdata);
-	if (ret < 0) {
-		dev_err(chip->dev, "[%s]Failed to init gpadc\n", __func__);
-		goto out;
+	if (chip->type == CHIP_PM822) {
+		ret = device_gpadc_init_822(chip);
+		if (ret < 0) {
+			dev_err(chip->dev, "[%s]Failed to init 88pm822 gpadc\n", __func__);
+			goto out;
+		}
+		chip->regmap_irq_chip = &pm822_irq_chip;
+	} else {
+		ret = device_gpadc_init(chip, pdata);
+		if (ret < 0) {
+			dev_err(chip->dev, "[%s]Failed to init gpadc\n", __func__);
+			goto out;
+		}
+		chip->regmap_irq_chip = &pm800_irq_chip;
 	}
-
-	chip->regmap_irq_chip = &pm800_irq_chip;
 
 	ret = device_irq_init_800(chip);
 	if (ret < 0) {
@@ -583,6 +749,12 @@ static int pm800_probe(struct i2c_client *client,
 	if (pdata && pdata->plat_config)
 		pdata->plat_config(chip, pdata);
 
+	if (chip->type == CHIP_PM822) {
+		pm822_base_map = chip->regmap;
+		pm_power_off = pm822_poweroff;
+		register_reboot_notifier(&pm822_reboot_nb);
+	}
+
 	return 0;
 
 err_device_init:
@@ -597,6 +769,13 @@ static int pm800_remove(struct i2c_client *client)
 {
 	struct pm80x_chip *chip = i2c_get_clientdata(client);
 
+	if (chip->type == CHIP_PM822) {
+		unregister_reboot_notifier(&pm822_reboot_nb);
+		if (pm_power_off == pm822_poweroff)
+			pm_power_off = NULL;
+		pm822_base_map = NULL;
+	}
+
 	mfd_remove_devices(chip->dev);
 	device_irq_exit_800(chip);
 
@@ -610,6 +789,7 @@ static struct i2c_driver pm800_driver = {
 	.driver = {
 		.name = "88PM800",
 		.pm = &pm80x_pm_ops,
+		.of_match_table = of_match_ptr(pm800_of_match),
 		},
 	.probe = pm800_probe,
 	.remove = pm800_remove,

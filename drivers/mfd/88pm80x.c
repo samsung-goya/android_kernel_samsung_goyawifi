@@ -93,6 +93,10 @@ int pm80x_init(struct i2c_client *client)
 		}
 	}
 
+	if (chip->type == CHIP_PM860 &&
+	    of_device_is_compatible(client->dev.of_node, "marvell,88pm822"))
+		chip->type = CHIP_PM822;
+
 	if (i == ARRAY_SIZE(chip_mapping)) {
 		dev_err(chip->dev,
 			"Failed to detect Marvell 88PM800:ChipID[0x%x]\n", val);

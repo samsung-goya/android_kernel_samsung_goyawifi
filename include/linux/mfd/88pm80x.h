@@ -22,6 +22,7 @@ enum {
 	CHIP_PM800,
 	CHIP_PM805,
 	CHIP_PM860,
+	CHIP_PM822,
 	CHIP_MAX,
 };
 
@@ -123,6 +124,11 @@ enum {
 #define PM800_RTC_MISC3			(0xE3)
 #define PM800_RTC_MISC4			(0xE4)
 #define PM800_RTC_MISC5			(0xE7)
+/* PM822 stores RTC epoch base in USER_DATA1..4 */
+#define PM822_RTC_BASE_OFFSET		(0xEA)
+#define PM822_GENERAL_USE_REG		(0xEF)
+#define PM822_SHUTDOWN_BY_POWEROFF	(0xA0)
+#define PM822_REBOOT_RECOVERY		(0x06)
 /* bit definitions of RTC Register 1 (0xD0) */
 #define PM800_ALARM1_EN			BIT(0)
 #define PM800_ALARM_WAKEUP		BIT(4)
