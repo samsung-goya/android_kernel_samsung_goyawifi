@@ -26,6 +26,7 @@
 #include <linux/mfd/core.h>
 #include <linux/mfd/88pm80x.h>
 #include <linux/rtc.h>
+#include <linux/of.h>
 
 #define PM800_RTC_COUNTER1		(0xD1)
 #define PM800_RTC_COUNTER2		(0xD2)
@@ -108,12 +109,21 @@ static void rtc_next_alarm_time(struct rtc_time *next, struct rtc_time *now,
 	}
 }
 
+static inline unsigned int pm80x_rtc_base_reg(struct pm80x_rtc_info *info)
+{
+	if (info->chip->type == CHIP_PM822)
+		return PM822_RTC_BASE_OFFSET;
+	return PM800_RTC_EXPIRE2_1;
+}
+
 static int pm80x_rtc_read_time(struct device *dev, struct rtc_time *tm)
 {
 	struct pm80x_rtc_info *info = dev_get_drvdata(dev);
 	unsigned char buf[4];
 	unsigned long ticks, base, data;
-	regmap_raw_read(info->map, PM800_RTC_EXPIRE2_1, buf, 4);
+	unsigned int base_reg = pm80x_rtc_base_reg(info);
+
+	regmap_raw_read(info->map, base_reg, buf, 4);
 	base = ((unsigned long)buf[3] << 24) | (buf[2] << 16) |
 		(buf[1] << 8) | buf[0];
 	dev_dbg(info->dev, "%x-%x-%x-%x\n", buf[0], buf[1], buf[2], buf[3]);
@@ -134,6 +144,7 @@ static int pm80x_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	struct pm80x_rtc_info *info = dev_get_drvdata(dev);
 	unsigned char buf[4];
 	unsigned long ticks, base, data;
+	unsigned int base_reg = pm80x_rtc_base_reg(info);
 
 	ticks = rtc_tm_to_time64(tm);
 
@@ -148,7 +159,7 @@ static int pm80x_rtc_set_time(struct device *dev, struct rtc_time *tm)
 	buf[1] = (base >> 8) & 0xFF;
 	buf[2] = (base >> 16) & 0xFF;
 	buf[3] = (base >> 24) & 0xFF;
-	regmap_raw_write(info->map, PM800_RTC_EXPIRE2_1, buf, 4);
+	regmap_raw_write(info->map, base_reg, buf, 4);
 
 	return 0;
 }
@@ -158,9 +169,10 @@ static int pm80x_rtc_read_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	struct pm80x_rtc_info *info = dev_get_drvdata(dev);
 	unsigned char buf[4];
 	unsigned long ticks, base, data;
+	unsigned int base_reg = pm80x_rtc_base_reg(info);
 	int ret;
 
-	regmap_raw_read(info->map, PM800_RTC_EXPIRE2_1, buf, 4);
+	regmap_raw_read(info->map, base_reg, buf, 4);
 	base = ((unsigned long)buf[3] << 24) | (buf[2] << 16) |
 		(buf[1] << 8) | buf[0];
 	dev_dbg(info->dev, "%x-%x-%x-%x\n", buf[0], buf[1], buf[2], buf[3]);
@@ -185,11 +197,12 @@ static int pm80x_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	struct rtc_time now_tm, alarm_tm;
 	unsigned long ticks, base, data;
 	unsigned char buf[4];
+	unsigned int base_reg = pm80x_rtc_base_reg(info);
 	int mask;
 
 	regmap_update_bits(info->map, PM800_RTC_CONTROL, PM800_ALARM1_EN, 0);
 
-	regmap_raw_read(info->map, PM800_RTC_EXPIRE2_1, buf, 4);
+	regmap_raw_read(info->map, base_reg, buf, 4);
 	base = ((unsigned long)buf[3] << 24) | (buf[2] << 16) |
 		(buf[1] << 8) | buf[0];
 	dev_dbg(info->dev, "%x-%x-%x-%x\n", buf[0], buf[1], buf[2], buf[3]);
@@ -202,13 +215,18 @@ static int pm80x_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 	dev_dbg(info->dev, "get base:0x%lx, RO count:0x%lx, ticks:0x%lx\n",
 		base, data, ticks);
 
-	rtc_time64_to_tm(ticks, &now_tm);
-	dev_dbg(info->dev, "%s, now time : %lu\n", __func__, ticks);
-	rtc_next_alarm_time(&alarm_tm, &now_tm, &alrm->time);
-	/* get new ticks for alarm in 24 hours */
-	ticks = rtc_tm_to_time64(&alarm_tm);
-	dev_dbg(info->dev, "%s, alarm time: %lu\n", __func__, ticks);
-	data = ticks - base;
+	if (info->chip->type == CHIP_PM822) {
+		ticks = rtc_tm_to_time64(&alrm->time);
+		data = ticks - base;
+	} else {
+		rtc_time64_to_tm(ticks, &now_tm);
+		dev_dbg(info->dev, "%s, now time : %lu\n", __func__, ticks);
+		rtc_next_alarm_time(&alarm_tm, &now_tm, &alrm->time);
+		/* get new ticks for alarm in 24 hours */
+		ticks = rtc_tm_to_time64(&alarm_tm);
+		dev_dbg(info->dev, "%s, alarm time: %lu\n", __func__, ticks);
+		data = ticks - base;
+	}
 
 	buf[0] = data & 0xff;
 	buf[1] = (data >> 8) & 0xff;
@@ -338,10 +356,18 @@ static int pm80x_rtc_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id pm80x_rtc_of_match[] = {
+	{ .compatible = "marvell,88pm80x-rtc" },
+	{ .compatible = "marvell,88pm822-rtc" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, pm80x_rtc_of_match);
+
 static struct platform_driver pm80x_rtc_driver = {
 	.driver = {
 		   .name = "88pm80x-rtc",
 		   .pm = &pm80x_rtc_pm_ops,
+		   .of_match_table = of_match_ptr(pm80x_rtc_of_match),
 		   },
 	.probe = pm80x_rtc_probe,
 	.remove = pm80x_rtc_remove,
@@ -353,3 +379,4 @@ MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Marvell 88PM80x RTC driver");
 MODULE_AUTHOR("Qiao Zhou <zhouqiao@marvell.com>");
 MODULE_ALIAS("platform:88pm80x-rtc");
+MODULE_ALIAS("platform:88pm822-rtc");
