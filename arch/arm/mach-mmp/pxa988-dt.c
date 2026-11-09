@@ -7,12 +7,15 @@
 
 #include <linux/clk-provider.h>
 #include <linux/clocksource.h>
+#include <linux/delay.h>
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/irqchip.h>
 #include <linux/of_platform.h>
+#include <linux/reboot.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
+#include <asm/system_misc.h>
 
 #include "addr-map.h"
 #include "common.h"
@@ -58,6 +61,62 @@ static void __init pxa988_dt_init_time(void)
 	timer_probe();
 }
 
+static void pxa988_restart(enum reboot_mode mode, const char *cmd)
+{
+	void __iomem *mpmu = ioremap(0xd4050000, 0x2000);
+	void __iomem *wdt = ioremap(0xd4080000, 0x100);
+
+	if (cmd && !strcmp(cmd, "recovery")) {
+		void __iomem *rtc_br0 = ioremap(0xd4010014, 4);
+		if (rtc_br0) {
+			writel_relaxed(0x7265636f, rtc_br0);
+			iounmap(rtc_br0);
+		}
+	}
+
+	if (mpmu && wdt) {
+		u32 reg, count;
+
+		/* Hold CP and reset MSA to avoid watchdog reset cancellation */
+		reg = readl_relaxed(mpmu + 0x1020) | BIT(0); /* MPMU_APRR_CPR */
+		writel_relaxed(reg, mpmu + 0x1020);
+		udelay(10);
+		reg = readl_relaxed(mpmu + 0x0020) | BIT(2) | BIT(3); /* MPMU_CPRR DSPR | BBR */
+		writel_relaxed(reg, mpmu + 0x0020);
+		udelay(10);
+
+		/* Reset and enable WDT clock */
+		writel_relaxed(0x7, mpmu + 0x0200); /* MPMU_WDTPCR */
+		readl_relaxed(mpmu + 0x0200);
+		writel_relaxed(0x3, mpmu + 0x0200);
+		readl_relaxed(mpmu + 0x0200);
+
+		/* Enable WDT reset */
+		writel_relaxed(0xbaba, wdt + 0x9c); /* TMR_WFAR */
+		writel_relaxed(0xeb10, wdt + 0xa0); /* TMR_WSAR */
+		writel_relaxed(0x3, wdt + 0x64);    /* TMR_WMER */
+
+		/* Negate HW reset to WDT after system reset */
+		reg = readl_relaxed(mpmu + 0x1020) | BIT(4); /* MPMU_APRR_WDTR */
+		writel_relaxed(reg, mpmu + 0x1020);
+
+		/* Clear previous WDT status */
+		writel_relaxed(0xbaba, wdt + 0x9c);
+		writel_relaxed(0xeb10, wdt + 0xa0);
+		writel_relaxed(0, wdt + 0x70);      /* TMR_WSR */
+
+		count = readl_relaxed(wdt + 0x6c);  /* TMR_WVR */
+
+		/* Set match counter for immediate reset */
+		writel_relaxed(0xbaba, wdt + 0x9c);
+		writel_relaxed(0xeb10, wdt + 0xa0);
+		writel_relaxed((count + 0x20) & 0xffff, wdt + 0x68); /* TMR_WMR */
+	}
+
+	mdelay(500);
+	soft_restart(0);
+}
+
 static const char *const pxa988_dt_board_compat[] __initconst = {
 	"marvell,pxa988",
 	"marvell,pxa986",
@@ -68,7 +127,7 @@ DT_MACHINE_START(PXA988_DT, "Marvell PXA988 (Device Tree)")
 	.map_io		= mmp_map_io,
 	.init_irq	= pxa988_dt_init_irq,
 	.init_time	= pxa988_dt_init_time,
-	.restart	= mmp_restart,
+	.restart	= pxa988_restart,
 	.dt_compat	= pxa988_dt_board_compat,
 	.l2c_aux_val	= 0x30800000,
 	.l2c_aux_mask	= 0xce7fffff,
