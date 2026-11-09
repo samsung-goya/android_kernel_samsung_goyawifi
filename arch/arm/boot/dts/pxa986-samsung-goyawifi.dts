@@ -203,8 +203,6 @@
 
 /* Dedicated PMIC & Audio Codec I2C Bus */
 &twsi2 {
-	mrvl,i2c-fast-mode;
-	mrvl,i2c-polling;
 	status = "okay";
 
 	pmic: pmic@30 {
