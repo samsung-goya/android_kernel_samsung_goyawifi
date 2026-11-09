@@ -25,6 +25,7 @@
 #include <linux/mfd/88pm80x.h>
 #include <linux/regmap.h>
 #include <linux/slab.h>
+#include <linux/of.h>
 
 #define PM800_LONG_ONKEY_EN		(1 << 0)
 #define PM800_LONG_KEY_DELAY		(8)	/* 1 .. 16 seconds */
@@ -149,10 +150,18 @@ static int pm80x_onkey_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct of_device_id pm80x_onkey_of_match[] = {
+	{ .compatible = "marvell,88pm80x-onkey" },
+	{ .compatible = "marvell,88pm822-onkey" },
+	{},
+};
+MODULE_DEVICE_TABLE(of, pm80x_onkey_of_match);
+
 static struct platform_driver pm80x_onkey_driver = {
 	.driver = {
 		   .name = "88pm80x-onkey",
 		   .pm = &pm80x_onkey_pm_ops,
+		   .of_match_table = of_match_ptr(pm80x_onkey_of_match),
 		   },
 	.probe = pm80x_onkey_probe,
 	.remove = pm80x_onkey_remove,
@@ -164,3 +173,4 @@ MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("Marvell 88PM80x ONKEY driver");
 MODULE_AUTHOR("Qiao Zhou <zhouqiao@marvell.com>");
 MODULE_ALIAS("platform:88pm80x-onkey");
+MODULE_ALIAS("platform:88pm822-onkey");
