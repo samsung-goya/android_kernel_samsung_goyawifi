@@ -25,7 +25,7 @@
 		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
 	};
 
-	i2c1_pmic_pins: i2c1-pmic-pins {
+	i2c_charger_pins: i2c-charger-pins {
 		pinctrl-single,pins = <
 			GPIO16 AF0	/* CHG_SCL */
 			GPIO17 AF0	/* CHG_SDA */
@@ -33,7 +33,7 @@
 		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 	};
 
-	i2c2_sensor_pins: i2c2-sensor-pins {
+	i2c_sensor_pins: i2c-sensor-pins {
 		pinctrl-single,pins = <
 			GPIO35 AF0	/* SENSOR_I2C_SCL */
 			GPIO36 AF0	/* SENSOR_I2C_SDA */
@@ -41,18 +41,26 @@
 		pinctrl-single,low-power-mode = <LPM_DRIVE_HIGH LPM_MASK>;
 	};
 
-	i2c3_camera_pins: i2c3-camera-pins {
+	i2c_muic_pins: i2c-muic-pins {
 		pinctrl-single,pins = <
-			GPIO53 AF2	/* CAM_SCL */
-			GPIO54 AF2	/* CAM_SDA */
+			GPIO49 AF0	/* MUIC_SCL */
+			GPIO50 AF0	/* MUIC_SDA */
 		>;
 		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
 	};
 
-	i2c4_touch_pins: i2c4-touch-pins {
+	i2c_camera_pins: i2c-camera-pins {
 		pinctrl-single,pins = <
-			GPIO87 AF5	/* TSP_SCL */
-			GPIO88 AF5	/* TSP_SDA */
+			GPIO53 AF0	/* CAM_SCL (bit-bang GPIO) */
+			GPIO54 AF0	/* CAM_SDA (bit-bang GPIO) */
+		>;
+		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
+	};
+
+	twsi1_pins: twsi1-pins {
+		pinctrl-single,pins = <
+			GPIO87 AF5	/* TSP/Bridge CI2C2_SCL */
+			GPIO88 AF5	/* TSP/Bridge CI2C2_SDA */
 		>;
 		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
 	};

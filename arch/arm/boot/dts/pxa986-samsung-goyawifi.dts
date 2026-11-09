@@ -8,12 +8,22 @@
 
 /dts-v1/;
 
+#include <dt-bindings/gpio/gpio.h>
 #include "pxa988.dtsi"
 #include "pxa986-samsung-goyawifi-pins.dtsi"
 
 / {
 	model = "Samsung Galaxy Tab 3 Lite 7.0 (SM-T110)";
 	compatible = "samsung,goyawifi", "marvell,pxa986", "marvell,pxa988";
+
+	aliases {
+		i2c0 = &camera_i2c;
+		i2c1 = &twsi1;
+		i2c2 = &twsi2;
+		i2c5 = &sensor_i2c;
+		i2c6 = &charger_i2c;
+		i2c7 = &muic_i2c;
+	};
 
 	chosen {
 		#address-cells = <1>;
@@ -99,6 +109,55 @@
 			no-map;
 		};
 	};
+
+	/* Bit-banged I2C buses */
+	camera_i2c: i2c-camera {
+		compatible = "i2c-gpio";
+		sda-gpios = <&gpio 54 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio 53 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <5>;	/* ~100 kHz */
+		#address-cells = <1>;
+		#size-cells = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c_camera_pins>;
+		status = "okay";
+	};
+
+	sensor_i2c: i2c-sensor {
+		compatible = "i2c-gpio";
+		sda-gpios = <&gpio 36 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio 35 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <5>;	/* ~100 kHz */
+		#address-cells = <1>;
+		#size-cells = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c_sensor_pins>;
+		status = "okay";
+	};
+
+	charger_i2c: i2c-charger {
+		compatible = "i2c-gpio";
+		sda-gpios = <&gpio 17 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio 16 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <5>;	/* ~100 kHz */
+		#address-cells = <1>;
+		#size-cells = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c_charger_pins>;
+		status = "okay";
+	};
+
+	muic_i2c: i2c-muic {
+		compatible = "i2c-gpio";
+		sda-gpios = <&gpio 50 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		scl-gpios = <&gpio 49 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+		i2c-gpio,delay-us = <5>;	/* ~100 kHz */
+		#address-cells = <1>;
+		#size-cells = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&i2c_muic_pins>;
+		status = "okay";
+	};
 };
 
 /* MFPR Pin Controller */
@@ -133,4 +192,177 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart2_pins>;
 	status = "okay";
+};
+
+/* Shared Touchscreen & Display Bridge I2C Bus */
+&twsi1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&twsi1_pins>;
+	mrvl,i2c-fast-mode;
+	status = "okay";
+};
+
+/* Dedicated PMIC & Audio Codec I2C Bus */
+&twsi2 {
+	mrvl,i2c-fast-mode;
+	status = "okay";
+
+	pmic: pmic@30 {
+		compatible = "marvell,88pm822", "marvell,88pm800";
+		reg = <0x30>;
+		interrupts = <GIC_SPI 4 IRQ_TYPE_LEVEL_HIGH>;
+		interrupt-parent = <&gic>;
+
+		regulators {
+			compatible = "marvell,88pm822-regulator", "marvell,88pm80x-regulator";
+
+			buck1: buck1 {
+				regulator-name = "vcc_main";
+				regulator-min-microvolt = <600000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			buck2: buck2 {
+				regulator-name = "v_buck2";
+				regulator-min-microvolt = <600000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			buck3: buck3 {
+				regulator-name = "v_buck3";
+				regulator-min-microvolt = <600000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			buck4: buck4 {
+				regulator-name = "v_buck4";
+				regulator-min-microvolt = <600000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			buck5: buck5 {
+				regulator-name = "v_buck5";
+				regulator-min-microvolt = <600000>;
+				regulator-max-microvolt = <3950000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			ldo1: ldo1 {
+				regulator-name = "v_tsp_3v3";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+			};
+
+			ldo2: ldo2 {
+				regulator-name = "v_ldo2";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+			};
+
+			ldo3: ldo3 {
+				regulator-name = "v_ldo3";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+			};
+
+			ldo4: ldo4 {
+				regulator-name = "vmmc";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+			};
+
+			ldo5: ldo5 {
+				regulator-name = "vqmmc";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+			};
+
+			ldo6: ldo6 {
+				regulator-name = "v_ldo6";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+			};
+
+			ldo7: ldo7 {
+				regulator-name = "v_ldo7";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+			};
+
+			ldo8: ldo8 {
+				regulator-name = "v_ldo8";
+				regulator-min-microvolt = <3100000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			ldo9: ldo9 {
+				regulator-name = "v_ldo9";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+			};
+
+			ldo10: ldo10 {
+				regulator-name = "v_ldo10";
+				regulator-min-microvolt = <3100000>;
+				regulator-max-microvolt = <3100000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			ldo11: ldo11 {
+				regulator-name = "v_ldo11";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			ldo12: ldo12 {
+				regulator-name = "v_ldo12";
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <1200000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			ldo13: ldo13 {
+				regulator-name = "v_ldo13";
+				regulator-min-microvolt = <1800000>;
+				regulator-max-microvolt = <1800000>;
+				regulator-boot-on;
+				regulator-always-on;
+			};
+
+			ldo14: ldo14 {
+				regulator-name = "v_ldo14";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <2800000>;
+			};
+
+			voutsw: voutsw {
+				regulator-name = "v_buck2_sw";
+				regulator-boot-on;
+				regulator-always-on;
+			};
+		};
+
+		rtc {
+			compatible = "marvell,88pm822-rtc", "marvell,88pm80x-rtc";
+		};
+
+		onkey {
+			compatible = "marvell,88pm822-onkey", "marvell,88pm80x-onkey";
+		};
+	};
 };

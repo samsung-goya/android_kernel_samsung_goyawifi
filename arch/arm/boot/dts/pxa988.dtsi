@@ -20,6 +20,9 @@
 		serial0 = &uart1;
 		serial1 = &uart2;
 		serial2 = &uart3;
+		i2c0 = &twsi0;
+		i2c1 = &twsi1;
+		i2c2 = &twsi2;
 	};
 
 	cpus {
@@ -208,6 +211,39 @@
 				dmas = <&pdma0 4
 					&pdma0 5>;
 				dma-names = "rx", "tx";
+				status = "disabled";
+			};
+
+			twsi0: i2c@d4011000 {
+				compatible = "mrvl,mmp-twsi";
+				reg = <0xd4011000 0x1000>;
+				interrupts = <GIC_SPI 7 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_TWSI0>;
+				resets = <&soc_clocks PXA988_CLK_TWSI0>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+
+			twsi1: i2c@d4010800 {
+				compatible = "mrvl,mmp-twsi";
+				reg = <0xd4010800 0x1000>;
+				interrupts = <GIC_SPI 33 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_TWSI1>;
+				resets = <&soc_clocks PXA988_CLK_TWSI1>;
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
+
+			twsi2: i2c@d4037000 {
+				compatible = "mrvl,mmp-twsi";
+				reg = <0xd4037000 0x1000>;
+				interrupts = <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_TWSI2>;
+				resets = <&soc_clocks PXA988_CLK_TWSI2>;
+				#address-cells = <1>;
+				#size-cells = <0>;
 				status = "disabled";
 			};
 
