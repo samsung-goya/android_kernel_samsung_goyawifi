@@ -922,6 +922,8 @@ static void i2c_pxa_master_complete(struct pxa_i2c *i2c, int ret)
 static void i2c_pxa_irq_txempty(struct pxa_i2c *i2c, u32 isr)
 {
 	u32 icr = readl(_ICR(i2c)) & ~(ICR_START|ICR_STOP|ICR_ACKNAK|ICR_TB);
+	bool complete = false;
+	int result = 0;
 
  again:
 	/*
@@ -959,7 +961,8 @@ static void i2c_pxa_irq_txempty(struct pxa_i2c *i2c, u32 isr)
 			else
 				ret = XFER_NAKED;
 		}
-		i2c_pxa_master_complete(i2c, ret);
+		complete = true;
+		result = ret;
 	} else if (isr & ISR_RWM) {
 		/*
 		 * Read mode.  We have just sent the address byte, and
@@ -1023,18 +1026,26 @@ static void i2c_pxa_irq_txempty(struct pxa_i2c *i2c, u32 isr)
 			 */
 			i2c_pxa_reset(i2c);
 		}
-		i2c_pxa_master_complete(i2c, 0);
+		complete = true;
+		result = 0;
 	}
 
 	i2c->icrlog[i2c->irqlogidx-1] = icr;
 
 	writel(icr, _ICR(i2c));
 	show_state(i2c);
+
+	if (complete) {
+		readl(_ICR(i2c));
+		i2c_pxa_master_complete(i2c, result);
+	}
 }
 
 static void i2c_pxa_irq_rxfull(struct pxa_i2c *i2c, u32 isr)
 {
 	u32 icr = readl(_ICR(i2c)) & ~(ICR_START|ICR_STOP|ICR_ACKNAK|ICR_TB);
+	bool complete = false;
+	int result = 0;
 
 	/*
 	 * Read the byte.
@@ -1051,12 +1062,18 @@ static void i2c_pxa_irq_rxfull(struct pxa_i2c *i2c, u32 isr)
 
 		icr |= ICR_ALDIE | ICR_TB;
 	} else {
-		i2c_pxa_master_complete(i2c, 0);
+		complete = true;
+		result = 0;
 	}
 
 	i2c->icrlog[i2c->irqlogidx-1] = icr;
 
 	writel(icr, _ICR(i2c));
+
+	if (complete) {
+		readl(_ICR(i2c));
+		i2c_pxa_master_complete(i2c, result);
+	}
 }
 
 #define VALID_INT_SOURCE	(ISR_SSD | ISR_ALD | ISR_ITE | ISR_IRF | \
@@ -1115,6 +1132,9 @@ static int i2c_pxa_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num
 {
 	struct pxa_i2c *i2c = adap->algo_data;
 	int ret, i;
+
+	if (in_atomic() || irqs_disabled() || system_state > SYSTEM_RUNNING)
+		return i2c_pxa_pio_xfer(adap, msgs, num);
 
 	for (i = adap->retries; i >= 0; i--) {
 		ret = i2c_pxa_do_xfer(i2c, msgs, num);
