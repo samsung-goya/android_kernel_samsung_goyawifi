@@ -34,6 +34,9 @@ u32 hw_read_otgsc(struct ci_hdrc *ci, u32 mask)
 	 * If using extcon framework for VBUS and/or ID signal
 	 * detection overwrite OTGSC register value
 	 */
+	if (ci->platdata->flags & CI_HDRC_FORCE_VBUS_ACTIVE_ALWAYS)
+		val |= OTGSC_BSV;
+
 	cable = &ci->platdata->vbus_extcon;
 	if (!IS_ERR(cable->edev)) {
 		if (cable->changed)
@@ -128,12 +131,15 @@ enum ci_role ci_otg_role(struct ci_hdrc *ci)
 
 void ci_handle_vbus_change(struct ci_hdrc *ci)
 {
-	if (!ci->is_otg)
+	if (!ci->is_otg && !(ci->platdata->flags & CI_HDRC_FORCE_VBUS_ACTIVE_ALWAYS))
 		return;
 
-	if (hw_read_otgsc(ci, OTGSC_BSV) && !ci->vbus_active)
+	if (((ci->platdata->flags & CI_HDRC_FORCE_VBUS_ACTIVE_ALWAYS) ||
+	     hw_read_otgsc(ci, OTGSC_BSV)) && !ci->vbus_active)
 		usb_gadget_vbus_connect(&ci->gadget);
-	else if (!hw_read_otgsc(ci, OTGSC_BSV) && ci->vbus_active)
+	else if (!hw_read_otgsc(ci, OTGSC_BSV) &&
+		 !(ci->platdata->flags & CI_HDRC_FORCE_VBUS_ACTIVE_ALWAYS) &&
+		 ci->vbus_active)
 		usb_gadget_vbus_disconnect(&ci->gadget);
 }
 

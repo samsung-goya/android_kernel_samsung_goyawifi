@@ -703,6 +703,9 @@ static int ci_get_platdata(struct device *dev,
 	if (of_find_property(dev->of_node, "non-zero-ttctrl-ttha", NULL))
 		platdata->flags |= CI_HDRC_SET_NON_ZERO_TTHA;
 
+	if (of_property_read_bool(dev->of_node, "force-vbus"))
+		platdata->flags |= CI_HDRC_FORCE_VBUS_ACTIVE_ALWAYS;
+
 	ext_id = ERR_PTR(-ENODEV);
 	ext_vbus = ERR_PTR(-ENODEV);
 	if (of_property_read_bool(dev->of_node, "extcon")) {
