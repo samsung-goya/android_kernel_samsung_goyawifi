@@ -138,6 +138,19 @@
 				#dma-cells = <1>;
 				asram = <&asram>;
 			};
+
+			usb: usb@d4208000 {
+				compatible = "marvell,pxa986-usb", "marvell,pxa988-usb";
+				reg = <0xd4208000 0x1000>,
+				      <0xd4207000 0x200>,
+				      <0xd428285c 0x4>;
+				reg-names = "controller", "phy", "clock";
+				interrupts = <GIC_SPI 44 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_USB>;
+				clock-names = "usb";
+				dr_mode = "peripheral";
+				status = "disabled";
+			};
 		};
 
 		apb@d4000000 {

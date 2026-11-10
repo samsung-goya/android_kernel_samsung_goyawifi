@@ -156,6 +156,15 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2c_muic_pins>;
 		status = "okay";
+
+		muic: muic@14 {
+			compatible = "richtek,rt8973a-muic";
+			reg = <0x14>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&muic_pins>;
+			interrupt-parent = <&gpio>;
+			interrupts = <93 IRQ_TYPE_EDGE_FALLING>;
+		};
 	};
 };
 
@@ -381,4 +390,11 @@
 			compatible = "marvell,88pm822-onkey", "marvell,88pm80x-onkey";
 		};
 	};
+};
+
+/* ChipIdea USB 2.0 Device Controller */
+&usb {
+	extcon = <&muic>;
+	force-vbus;
+	status = "okay";
 };

@@ -49,6 +49,13 @@
 		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
 	};
 
+	muic_pins: muic-pins {
+		pinctrl-single,pins = <
+			GPIO93 AF0	/* MUIC_INT */
+		>;
+		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
+	};
+
 	i2c_camera_pins: i2c-camera-pins {
 		pinctrl-single,pins = <
 			GPIO53 AF0	/* CAM_SCL (bit-bang GPIO) */
