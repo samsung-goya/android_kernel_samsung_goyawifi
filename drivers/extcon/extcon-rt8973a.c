@@ -24,7 +24,7 @@
 
 #include "extcon-rt8973a.h"
 
-#define	DELAY_MS_DEFAULT		20000	/* unit: millisecond */
+#define	DELAY_MS_DEFAULT		50	/* unit: millisecond */
 
 struct muic_irq {
 	unsigned int irq;
@@ -83,7 +83,8 @@ static struct reg_data rt8973a_reg_data[] = {
 			| RT8973A_REG_CONTROL1_INTM_MASK,
 		.val = RT8973A_REG_CONTROL1_ADC_EN_MASK
 			| RT8973A_REG_CONTROL1_USB_CHD_EN_MASK
-			| RT8973A_REG_CONTROL1_CHGTYP_MASK,
+			| RT8973A_REG_CONTROL1_CHGTYP_MASK
+			| RT8973A_REG_CONTROL1_AUTO_CONFIG_MASK,
 		.invert = false,
 	},
 	{ /* sentinel */ }
@@ -228,13 +229,6 @@ static int rt8973a_muic_set_path(struct rt8973a_muic_info *info,
 {
 	int ret;
 
-	/*
-	 * Don't need to set h/w path according to cable type
-	 * if Auto-configuration mode of CONTROL1 register is true.
-	 */
-	if (info->auto_config)
-		return 0;
-
 	if (!attached)
 		con_sw	= DM_DP_SWITCH_UART;
 
@@ -263,7 +257,7 @@ static int rt8973a_muic_set_path(struct rt8973a_muic_info *info,
 
 static int rt8973a_muic_get_cable_type(struct rt8973a_muic_info *info)
 {
-	unsigned int adc, dev1;
+	unsigned int adc, dev1, int2 = 0;
 	int ret, cable_type;
 
 	/* Read ADC value according to external cable or button */
@@ -274,21 +268,32 @@ static int rt8973a_muic_get_cable_type(struct rt8973a_muic_info *info)
 	}
 	cable_type = adc & RT8973A_REG_ADC_MASK;
 
-	/* Read Device 1 reigster to identify correct cable type */
+	/* Read Device 1 register to identify correct cable type */
 	ret = regmap_read(info->regmap, RT8973A_REG_DEV1, &dev1);
 	if (ret) {
 		dev_err(info->dev, "failed to read DEV1 register\n");
 		return ret;
 	}
 
-	switch (adc) {
+	switch (cable_type) {
 	case RT8973A_MUIC_ADC_OPEN:
-		if (dev1 & RT8973A_REG_DEV1_USB_MASK)
+		if (dev1 & RT8973A_REG_DEV1_USB_MASK) {
 			cable_type = RT8973A_MUIC_ADC_USB;
-		else if (dev1 & RT8973A_REG_DEV1_DCPORT_MASK)
+		} else if (dev1 & RT8973A_REG_DEV1_DCPORT_MASK) {
 			cable_type = RT8973A_MUIC_ADC_TA;
-		else
-			cable_type = RT8973A_MUIC_ADC_OPEN;
+		} else {
+			/*
+			 * On cold boot with a standard USB cable connected, DEV1
+			 * might not have latched BC1.2 SDP/CDP yet. Check INT2
+			 * for UVLO: bit 0 (UVLOT) or bit 1 is cleared when VBUS
+			 * is above the 4.0V threshold (i.e. VBUS is present).
+			 */
+			if (regmap_read(info->regmap, RT8973A_REG_INT2, &int2) == 0 &&
+			    !(int2 & (RT8973A_INT2_UVLOT_MASK | BIT(1))))
+				cable_type = RT8973A_MUIC_ADC_USB;
+			else
+				cable_type = RT8973A_MUIC_ADC_OPEN;
+		}
 		break;
 	default:
 		break;
@@ -495,6 +500,18 @@ static void rt8973a_muic_detect_cable_wq(struct work_struct *work)
 	struct rt8973a_muic_info *info = container_of(to_delayed_work(work),
 				struct rt8973a_muic_info, wq_detcable);
 	int ret;
+
+	/* Kick BC1.2 charger/USB detection engine on boot */
+	regmap_update_bits(info->regmap, RT8973A_REG_CONTROL1,
+			   RT8973A_REG_CONTROL1_USB_CHD_EN_MASK |
+			   RT8973A_REG_CONTROL1_CHGTYP_MASK, 0);
+	udelay(50);
+	regmap_update_bits(info->regmap, RT8973A_REG_CONTROL1,
+			   RT8973A_REG_CONTROL1_USB_CHD_EN_MASK |
+			   RT8973A_REG_CONTROL1_CHGTYP_MASK,
+			   RT8973A_REG_CONTROL1_USB_CHD_EN_MASK |
+			   RT8973A_REG_CONTROL1_CHGTYP_MASK);
+	msleep(10);
 
 	/* Notify the state of connector cable or not  */
 	ret = rt8973a_muic_cable_handler(info, RT8973A_EVENT_ATTACH);
