@@ -1634,10 +1634,19 @@ static int ci_udc_pullup(struct usb_gadget *_gadget, int is_on)
 		return 0;
 
 	pm_runtime_get_sync(&ci->gadget.dev);
-	if (is_on)
-		hw_write(ci, OP_USBCMD, USBCMD_RS, USBCMD_RS);
-	else
+	if (is_on) {
+		/*
+		 * Ensure Run/Stop is de-asserted (SE0 / disconnect) for 50ms
+		 * before asserting pull-up. This guarantees that host hubs detect
+		 * a genuine disconnect/reconnect transition even when the cable
+		 * was plugged in prior to boot or bootloader handoff.
+		 */
 		hw_write(ci, OP_USBCMD, USBCMD_RS, 0);
+		msleep(50);
+		hw_write(ci, OP_USBCMD, USBCMD_RS, USBCMD_RS);
+	} else {
+		hw_write(ci, OP_USBCMD, USBCMD_RS, 0);
+	}
 	pm_runtime_put_sync(&ci->gadget.dev);
 
 	return 0;
@@ -1806,6 +1815,8 @@ static int ci_udc_start(struct usb_gadget *gadget,
 	retval = hw_device_state(ci, ci->ep0out->qh.dma);
 	if (retval)
 		pm_runtime_put_sync(&ci->gadget.dev);
+	else
+		usb_udc_vbus_handler(&ci->gadget, true);
 
 	return retval;
 }

@@ -611,6 +611,7 @@ static int ci_cable_notifier(struct notifier_block *nb, unsigned long event,
 	cbl->changed = true;
 
 	ci_irq(ci);
+	ci_handle_vbus_change(ci);
 	return NOTIFY_DONE;
 }
 
