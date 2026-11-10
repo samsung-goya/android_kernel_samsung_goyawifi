@@ -19,6 +19,15 @@ config USB_CHIPIDEA_OF
 	depends on OF
 	default USB_CHIPIDEA
 
+config USB_CHIPIDEA_PXA
+	tristate "ChipIdea driver for Marvell PXA988/PXA986 SoCs"
+	depends on USB_CHIPIDEA_OF && (ARCH_MMP || COMPILE_TEST)
+	select GENERIC_PHY
+	default USB_CHIPIDEA
+	help
+	  Say Y here to enable support for the ChipIdea USB controller
+	  found on Marvell PXA988/PXA986 SoCs.
+
 config USB_CHIPIDEA_PCI
 	tristate
 	depends on USB_PCI
