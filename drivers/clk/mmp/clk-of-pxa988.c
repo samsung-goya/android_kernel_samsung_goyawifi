@@ -650,6 +650,30 @@ static void __init pxa988_clk_misc_init(struct pxa988_clk_unit *pxa_unit)
 	val |= (SDH_ALL_RESET | SDH_ACLK_EN);
 	writel_relaxed(val, pxa_unit->apmu_base + APMU_SDH0);
 
+	/* Initialize eMMC SDH2 clock to 52MHz (PLL1_416 / 8) and clock active */
+	val = readl_relaxed(pxa_unit->apmu_base + APMU_SDH2);
+	writel_relaxed((val & ~0x7c0) | 0xf12, pxa_unit->apmu_base + APMU_SDH2);
+
+	/*
+	 * Configure MMC1 (microSD) pad domain to 3.3V and power active.
+	 * APBC ASFAR/ASSAR must be unlocked with magic keys 0xbaba / 0xeb10.
+	 */
+	{
+		void __iomem *aib_mmc = ioremap(0xd401e81c, 4);
+
+		if (aib_mmc) {
+			u32 sdpad;
+
+			writel_relaxed(0xbaba, pxa_unit->apbc_base + 0x50);
+			writel_relaxed(0xeb10, pxa_unit->apbc_base + 0x54);
+			sdpad = (readl_relaxed(aib_mmc) & ~0xc) | 1;
+			writel_relaxed(0xbaba, pxa_unit->apbc_base + 0x50);
+			writel_relaxed(0xeb10, pxa_unit->apbc_base + 0x54);
+			writel_relaxed(sdpad, aib_mmc);
+			iounmap(aib_mmc);
+		}
+	}
+
 	/* Disable unused NAND (DFC) and AES/GEU controller clocks */
 	writel_relaxed(0x0, pxa_unit->apmu_base + APMU_DFC);
 	writel_relaxed(0x0, pxa_unit->apmu_base + APMU_GEU);
