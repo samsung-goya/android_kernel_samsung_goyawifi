@@ -22,6 +22,9 @@
 		i2c5 = &sensor_i2c;
 		i2c6 = &charger_i2c;
 		i2c7 = &muic_i2c;
+		mmc0 = &sdh3;
+		mmc1 = &sdh1;
+		mmc2 = &sdh2;
 	};
 
 	chosen {
@@ -280,25 +283,25 @@
 			};
 
 			ldo3: ldo3 {
-				regulator-name = "v_ldo3";
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <1800000>;
+				regulator-name = "v_mem_a_2v8";
+				regulator-min-microvolt = <2800000>;
+				regulator-max-microvolt = <3300000>;
 				regulator-boot-on;
 				regulator-always-on;
 			};
 
 			ldo4: ldo4 {
-				regulator-name = "vmmc";
+				regulator-name = "v_sd_3v3";
 				regulator-min-microvolt = <2800000>;
-				regulator-max-microvolt = <2800000>;
+				regulator-max-microvolt = <3300000>;
 				regulator-boot-on;
 				regulator-always-on;
 			};
 
 			ldo5: ldo5 {
-				regulator-name = "vqmmc";
-				regulator-min-microvolt = <1800000>;
-				regulator-max-microvolt = <1800000>;
+				regulator-name = "v_mmc_3v3";
+				regulator-min-microvolt = <1200000>;
+				regulator-max-microvolt = <3300000>;
 				regulator-boot-on;
 				regulator-always-on;
 			};
@@ -396,5 +399,39 @@
 &usb {
 	extcon = <&muic>;
 	force-vbus;
+	status = "okay";
+};
+
+/* eMMC Internal Storage (SanDisk 8GB) */
+&sdh3 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdh3_emmc_pins>;
+	bus-width = <8>;
+	non-removable;
+	no-sd;
+	no-sdio;
+	no-1-8-v;
+	max-frequency = <26000000>;
+	assigned-clocks = <&soc_clocks PXA988_CLK_SDH2>;
+	assigned-clock-rates = <52000000>;
+	mrvl,clk-delay-cycles = <15>;
+	status = "okay";
+};
+
+/* microSD Card Slot (CD600) */
+&sdh1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdh1_pins>;
+	bus-width = <4>;
+	cd-gpios = <&gpio 11 GPIO_ACTIVE_LOW>;
+	cd-debounce-delay-ms = <200>;
+	disable-wp;
+	vmmc-supply = <&ldo4>;
+	vqmmc-supply = <&ldo5>;
+	cap-sd-highspeed;
+	no-1-8-v;
+	max-frequency = <50000000>;
+	assigned-clocks = <&soc_clocks PXA988_CLK_SDH0>;
+	assigned-clock-rates = <52000000>;
 	status = "okay";
 };

@@ -151,6 +151,36 @@
 				dr_mode = "peripheral";
 				status = "disabled";
 			};
+
+			sdh3: sdh@d4281000 {
+				compatible = "mrvl,pxav3-mmc";
+				reg = <0xd4281000 0x120>;
+				interrupts = <GIC_SPI 39 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_SDH2>,
+					 <&soc_clocks PXA988_CLK_SDH_AXI>;
+				clock-names = "io", "core";
+				status = "disabled";
+			};
+
+			sdh1: sdh@d4280000 {
+				compatible = "mrvl,pxav3-mmc";
+				reg = <0xd4280000 0x120>;
+				interrupts = <GIC_SPI 39 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_SDH0>,
+					 <&soc_clocks PXA988_CLK_SDH_AXI>;
+				clock-names = "io", "core";
+				status = "disabled";
+			};
+
+			sdh2: sdh@d4280800 {
+				compatible = "mrvl,pxav3-mmc";
+				reg = <0xd4280800 0x120>;
+				interrupts = <GIC_SPI 39 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_SDH1>,
+					 <&soc_clocks PXA988_CLK_SDH_AXI>;
+				clock-names = "io", "core";
+				status = "disabled";
+			};
 		};
 
 		apb@d4000000 {

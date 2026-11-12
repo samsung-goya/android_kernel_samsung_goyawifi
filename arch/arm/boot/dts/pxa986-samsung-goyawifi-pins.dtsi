@@ -86,6 +86,7 @@
 			MMC1_CLK  AF0
 			MMC1_CD   AF1
 			MMC1_WP   AF1
+			GPIO11    AF0	/* SD_DETECT */
 		>;
 		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
