@@ -10,6 +10,7 @@
 
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
+#include <dt-bindings/interrupt-controller/irq.h>
 #include "pxa988.dtsi"
 #include "pxa986-samsung-goyawifi-pins.dtsi"
 
@@ -240,6 +241,23 @@
 	pinctrl-0 = <&twsi1_pins>;
 	mrvl,i2c-fast-mode;
 	status = "okay";
+
+	touchscreen@20 {
+		compatible = "zinitix,bt532";
+		reg = <0x20>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&touch_pins>;
+		interrupt-parent = <&gpio>;
+		interrupts = <94 IRQ_TYPE_EDGE_FALLING>;
+		vdd-supply = <&ldo1>;
+		vcca-supply = <&ldo1>;
+		touchscreen-size-x = <600>;
+		touchscreen-size-y = <1024>;
+		touchscreen-inverted-x;
+		touchscreen-swapped-x-y;
+		zinitix,mode = <0>;
+		linux,keycodes = <KEY_RESERVED KEY_MENU KEY_BACK KEY_RESERVED>;
+	};
 };
 
 /* Dedicated PMIC & Audio Codec I2C Bus */

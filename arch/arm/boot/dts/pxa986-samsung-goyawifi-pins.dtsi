@@ -159,4 +159,11 @@
 		>;
 		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
 	};
+
+	touch_pins: touch-pins {
+		pinctrl-single,pins = <
+			GPIO94 AF0	/* TSP_INT */
+		>;
+		pinctrl-single,bias-pullup = <PULL_NONE PULL_UP PULL_NONE PULL_MASK>;
+	};
 };
