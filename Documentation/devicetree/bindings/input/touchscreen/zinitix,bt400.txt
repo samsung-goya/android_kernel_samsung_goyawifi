@@ -1,0 +1,44 @@
+* Zinitix BT4xx / BT5xx touchscreen controller
+
+Required properties:
+- compatible: must be one of:
+  - "zinitix,bt400"
+  - "zinitix,bt532"
+  - "zinitix,bt541"
+- reg: I2C slave address of the chip (typically 0x20).
+- interrupts: interrupt to which the chip is connected.
+- vdd-supply: digital power supply regulator.
+- vcca-supply: analog power supply regulator.
+
+Optional properties:
+- zinitix,mode: reporting mode used by the firmware (0, 1, or 2).
+  Mode 0 uses 6-byte contact records and is used by BT532; mode 2 is
+  the default.
+- linux,keycodes: array of up to 8 keycodes for capacitive touch buttons
+  (use KEY_RESERVED / 0 for unused button slots).
+- touchscreen-size-x: see touchscreen.txt
+- touchscreen-size-y: see touchscreen.txt
+- touchscreen-fuzz-x: see touchscreen.txt
+- touchscreen-fuzz-y: see touchscreen.txt
+- touchscreen-inverted-x: see touchscreen.txt
+- touchscreen-inverted-y: see touchscreen.txt
+- touchscreen-swapped-x-y: see touchscreen.txt
+
+Example:
+
+	i2c@d4010800 {
+		touchscreen@20 {
+			compatible = "zinitix,bt532";
+			reg = <0x20>;
+			interrupt-parent = <&gpio>;
+			interrupts = <94 IRQ_TYPE_EDGE_FALLING>;
+			vdd-supply = <&ldo1>;
+			vcca-supply = <&ldo1>;
+			touchscreen-size-x = <600>;
+			touchscreen-size-y = <1024>;
+			touchscreen-inverted-x;
+			touchscreen-swapped-x-y;
+			zinitix,mode = <0>;
+			linux,keycodes = <KEY_RESERVED KEY_MENU KEY_BACK KEY_RESERVED>;
+		};
+	};
