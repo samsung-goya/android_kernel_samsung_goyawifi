@@ -132,6 +132,13 @@
 		pinctrl-single,low-power-mode = <LPM_DRIVE_HIGH LPM_MASK>;
 	};
 
+	home_key_pins: home-key-pins {
+		pinctrl-single,pins = <
+			GPIO13 AF0	/* KEY_HOME */
+		>;
+		pinctrl-single,bias-pullup = <PULL_NONE PULL_UP PULL_NONE PULL_MASK>;
+	};
+
 	display_pins: display-pins {
 		pinctrl-single,pins = <
 			GPIO9  AF0	/* LCD_3P3_EN */

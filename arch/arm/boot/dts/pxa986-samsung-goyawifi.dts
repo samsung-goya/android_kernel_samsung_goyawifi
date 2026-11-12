@@ -9,6 +9,7 @@
 /dts-v1/;
 
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
 #include "pxa988.dtsi"
 #include "pxa986-samsung-goyawifi-pins.dtsi"
 
@@ -167,6 +168,34 @@
 			pinctrl-0 = <&muic_pins>;
 			interrupt-parent = <&gpio>;
 			interrupts = <93 IRQ_TYPE_EDGE_FALLING>;
+		};
+	};
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_keys_pins &home_key_pins>;
+
+		volume-up {
+			label = "Volume Up";
+			linux,code = <KEY_VOLUMEUP>;
+			gpios = <&gpio 1 GPIO_ACTIVE_LOW>;
+			debounce-interval = <30>;
+		};
+
+		volume-down {
+			label = "Volume Down";
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpios = <&gpio 2 GPIO_ACTIVE_LOW>;
+			debounce-interval = <30>;
+		};
+
+		home {
+			label = "Home";
+			linux,code = <KEY_HOME>;
+			gpios = <&gpio 13 GPIO_ACTIVE_LOW>;
+			debounce-interval = <30>;
+			wakeup-source;
 		};
 	};
 };
