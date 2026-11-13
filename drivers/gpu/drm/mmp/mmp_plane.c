@@ -212,6 +212,19 @@ static int mmp_plane_atomic_check(struct drm_plane *plane,
 	    src_w > 0xfff || src_h > 0xfff || dst_w > 0xfff || dst_h > 0xfff)
 		return -ERANGE;
 
+	/*
+	 * PXA986 A0 DMA overlay single-plane packed fetch produces scanline
+	 * drops and x >= 256 channel corruption unless DMA_HPXL equals
+	 * active scanline width; multi-plane YUV and primary GRA are clean.
+	 */
+	if (mplane->is_overlay && state->fb->format->num_planes == 1) {
+		u32 hdisplay = crtc_state->adjusted_mode.hdisplay ?:
+			       crtc_state->mode.hdisplay;
+
+		if (src_w != hdisplay)
+			return -EINVAL;
+	}
+
 	return 0;
 }
 
