@@ -4,6 +4,7 @@
  */
 
 #include <linux/clk.h>
+#include <linux/device.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
 #include <linux/of.h>
@@ -19,6 +20,8 @@
 #include "mmp_regs.h"
 
 #define MMP_GAMMA_LUT_SIZE	256
+#define MMP_ERR_IRQS		((u32)(DMA_FF_UNDERFLOW | GRA_FF_UNDERFLOW | \
+				       AXI_BUS_ERROR_IRQ))
 
 static int mmp_crtc_clks_enable(struct mmp_crtc *mcrtc)
 {
@@ -129,11 +132,13 @@ static void mmp_crtc_mode_set_nofb(struct drm_crtc *crtc)
 
 	writel(0x0000fff0, mcrtc->regs + LCD_TOP_CTRL);
 	writel(0, mcrtc->regs + LCD_SPU_SRAM_CTRL);
+	writel(0, mcrtc->regs + LCD_SPU_SRAM_PARA0);
 	writel(CFG_PDWN256x8, mcrtc->regs + LCD_SPU_SRAM_PARA1);
 	writel(0, mcrtc->regs + LCD_AFA_ALL2ONE);
 	writel(0, mcrtc->regs + LCD_SQULN1_CTRL);
 	writel(0, mcrtc->regs + LCD_SQULN2_CTRL);
-	writel(CFG_CYC_BURST_LEN16, mcrtc->regs + LCD_SPU_IOPAD_CONTROL);
+	writel(CFG_BOUNDARY_1KB | CFG_CYC_BURST_LEN16,
+	       mcrtc->regs + LCD_SPU_IOPAD_CONTROL);
 	writel(0, mcrtc->regs + LCD_SPU_BLANKCOLOR);
 	writel(0, mcrtc->regs + LCD_SPU_DMA_CTRL0);
 	writel(0x28320081, mcrtc->regs + LCD_SPU_DMA_CTRL1);
@@ -159,6 +164,7 @@ static void mmp_crtc_atomic_enable(struct drm_crtc *crtc,
 				   struct drm_crtc_state *old_state)
 {
 	struct mmp_crtc *mcrtc = to_mmp_crtc(crtc);
+	unsigned long flags;
 	int ret;
 
 	ret = mmp_crtc_clks_enable(mcrtc);
@@ -180,6 +186,12 @@ static void mmp_crtc_atomic_enable(struct drm_crtc *crtc,
 		writel(dumb, mcrtc->regs + LCD_SPU_DUMB_CTRL);
 	}
 
+	spin_lock_irqsave(&mcrtc->irq_lock, flags);
+	writel(~MMP_ERR_IRQS, mcrtc->regs + LCD_SPU_IRQ_ISR);
+	mcrtc->irq_ena |= MMP_ERR_IRQS;
+	writel(mcrtc->irq_ena, mcrtc->regs + LCD_SPU_IRQ_ENA);
+	spin_unlock_irqrestore(&mcrtc->irq_lock, flags);
+
 	drm_crtc_vblank_on(crtc);
 }
 
@@ -190,6 +202,11 @@ static void mmp_crtc_atomic_disable(struct drm_crtc *crtc,
 	unsigned long flags;
 
 	drm_crtc_vblank_off(crtc);
+
+	spin_lock_irqsave(&mcrtc->irq_lock, flags);
+	mcrtc->irq_ena &= ~MMP_ERR_IRQS;
+	writel(mcrtc->irq_ena, mcrtc->regs + LCD_SPU_IRQ_ENA);
+	spin_unlock_irqrestore(&mcrtc->irq_lock, flags);
 
 	spin_lock_irqsave(&crtc->dev->event_lock, flags);
 	if (crtc->state->event) {
@@ -365,6 +382,14 @@ static irqreturn_t mmp_crtc_irq(int irq, void *data)
 
 	if (!handled)
 		return IRQ_NONE;
+
+	if (handled & MMP_ERR_IRQS)
+		dev_warn_ratelimited(crtc->dev->dev,
+				     "lcdc error irq: 0x%08x (dma_uf=%d gra_uf=%d axi=%d)\n",
+				     handled & MMP_ERR_IRQS,
+				     !!(handled & DMA_FF_UNDERFLOW),
+				     !!(handled & GRA_FF_UNDERFLOW),
+				     !!(handled & AXI_BUS_ERROR_IRQ));
 
 	if (handled & VSYNC_IRQ) {
 		drm_crtc_handle_vblank(crtc);
