@@ -481,6 +481,12 @@ int mmp_crtc_irq_init(struct mmp_crtc *mcrtc)
 		 readl(mcrtc->regs + LCD_SPU_DMA_CTRL0),
 		 readl(mcrtc->regs + TIMING_MASTER_CONTROL),
 		 mcrtc->clk_axi ? clk_get_rate(mcrtc->clk_axi) : 0);
+	if (mcrtc->clk_axi) {
+		ret = clk_set_rate(mcrtc->clk_axi, 312000000);
+		dev_info(mcrtc->base.dev->dev,
+			 "lcdc axi: target=312000000Hz ret=%d rate=%luHz\n",
+			 ret, clk_get_rate(mcrtc->clk_axi));
+	}
 	writel(0, mcrtc->regs + LCD_SPU_IRQ_ENA);
 	writel(0, mcrtc->regs + LCD_SPU_IRQ_ISR);
 

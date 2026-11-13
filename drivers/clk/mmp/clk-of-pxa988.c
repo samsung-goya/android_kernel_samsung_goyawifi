@@ -502,6 +502,14 @@ static struct mmp_clk_mix_config sdh2_mix_config = {
 	.reg_info = DEFINE_MIX_REG_INFO(3, 8, 1, 6, 11),
 };
 
+static const char * const lcd_axi_parent_names[] = {
+	"pll1_416", "pll1_624", "pll2", "pll2p"
+};
+
+static struct mmp_clk_mix_config lcd_axi_mix_config = {
+	.reg_info = DEFINE_MIX_REG_INFO(3, 19, 2, 17, 22),
+};
+
 static const char * const lcd_parent_names[] = {"pll1_624", "pll1_416"};
 
 static const struct clk_div_table lcd_div_table[] = {
@@ -528,7 +536,7 @@ static struct mmp_param_gate_clk apmu_gate_clks[] = {
 	/* Display clocks: keep CLK_IGNORE_UNUSED until DRM takes full control */
 	{PXA988_CLK_LCD_HCLK, "lcd_hclk", "axi",
 	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DISP1, 0x24, 0x24, 0x04, 0, &disp_lock},
-	{PXA988_CLK_LCD_AXI, "lcd_axi", "axi",
+	{PXA988_CLK_LCD_AXI, "lcd_axi", "lcd_axi_mix",
 	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DISP1, 0x10008, 0x10008, 0x10000, 0, &disp_lock},
 	{PXA988_CLK_LCD, "lcd_clk", "lcd_div",
 	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DISP1, 0x13, 0x13, 0x03, 0, &disp_lock},
@@ -597,7 +605,13 @@ static void __init pxa988_axi_periph_clk_init(struct pxa988_clk_unit *pxa_unit)
 				    0x12, 0x12, 0x0, 0, &sdh2_lock);
 	mmp_clk_add(unit, PXA988_CLK_SDH2, clk);
 
-	/* Register LCD functional mux/divider and fixed 52 MHz DSI escape clock */
+	/* Register LCD/CCIC/ISP AXI mix, LCD pixel mux/div, and 52 MHz DSI esc */
+	lcd_axi_mix_config.reg_info.reg_clk_ctrl = pxa_unit->apmu_base + APMU_DISP1;
+	mmp_clk_register_mix(NULL, "lcd_axi_mix",
+			     (const char **)lcd_axi_parent_names,
+			     ARRAY_SIZE(lcd_axi_parent_names),
+			     CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED,
+			     &lcd_axi_mix_config, &disp_lock);
 	clk = clk_register_mux(NULL, "lcd_mux", lcd_parent_names,
 			       ARRAY_SIZE(lcd_parent_names),
 			       CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
@@ -713,11 +727,10 @@ static void __init pxa988_clk_misc_init(struct pxa988_clk_unit *pxa_unit)
 	writel_relaxed(0x00055555, pxa_unit->ciu_base + CIU_GPU_XTC);
 	writel_relaxed(0x00055555, pxa_unit->ciu_base + CIU_GPU2D_XTC);
 
-	/* Enable MC4 and AXI fabric dynamic clock gating */
+	/* Enable MC4 and AXI fabric dynamic clock gating (1x2 gating is PXA1088-only) */
 	val = readl_relaxed(pxa_unit->ciu_base + CIU_MC_CONF);
 	val &= ~BIT(16);			/* disable cp fabric gating */
 	val &= ~BIT(19);			/* enable dclk gating */
-	val |= BIT(29) | BIT(30);		/* enable 1x2 fabric AXI gating */
 	val |= (0xff << 8) |			/* MCK4 P0~P7 */
 	       BIT(17) | BIT(18) |		/* Fabric 0 */
 	       BIT(20) | BIT(21) |		/* VPU fabric */

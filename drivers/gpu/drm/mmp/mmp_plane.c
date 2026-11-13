@@ -284,8 +284,17 @@ static void mmp_plane_atomic_update(struct drm_plane *plane,
 	writel((u32)paddr, mplane->regs + lregs->start0);
 	writel((u32)paddr, mplane->regs + lregs->start1);
 	writel(state->fb->pitches[0] & 0xffff, mplane->regs + lregs->pitch);
-	if (mplane->is_overlay && fmt->yuv2rgb)
-		mmp_plane_program_yuv(state, mplane, fmt);
+	if (mplane->is_overlay) {
+		if (state->fb->format->num_planes == 1) {
+			writel(0, mplane->regs + LCD_SPU_DMA_START_ADDR_U0);
+			writel(0, mplane->regs + LCD_SPU_DMA_START_ADDR_U1);
+			writel(0, mplane->regs + LCD_SPU_DMA_START_ADDR_V0);
+			writel(0, mplane->regs + LCD_SPU_DMA_START_ADDR_V1);
+			writel(0, mplane->regs + LCD_SPU_DMA_PITCH_UV);
+		}
+		if (fmt->yuv2rgb)
+			mmp_plane_program_yuv(state, mplane, fmt);
+	}
 	writel(((state->dst.y1 & 0xfff) << 16) | (state->dst.x1 & 0xfff),
 	       mplane->regs + lregs->ovsa);
 	writel(((src_h & 0xfff) << 16) | (src_w & 0xfff),
@@ -306,7 +315,7 @@ static void mmp_plane_atomic_update(struct drm_plane *plane,
 	ctrl0 = readl(mplane->regs + LCD_SPU_DMA_CTRL0);
 	ctrl0 &= ~(lregs->ctrl0_mask | CFG_NOBLENDING | CFG_CBSH_ENA |
 		   CFG_PALETTE_ENA);
-	ctrl0 |= CFG_ARBFAST_ENA | lregs->ena_bit |
+	ctrl0 |= CFG_ARBFAST_ENA | lregs->ena_bit | lregs->hsmooth_bit |
 		 ((u32)fmt->hw_fmt << lregs->fmt_shift);
 	if (fmt->swaprb)
 		ctrl0 |= lregs->swaprb_bit;
@@ -316,8 +325,6 @@ static void mmp_plane_atomic_update(struct drm_plane *plane,
 		ctrl0 |= lregs->swapyu_bit;
 	if (fmt->yuv2rgb)
 		ctrl0 |= lregs->yuv2rgb_bit;
-	if (src_w != dst_w)
-		ctrl0 |= lregs->hsmooth_bit;
 	writel(ctrl0, mplane->regs + LCD_SPU_DMA_CTRL0);
 }
 
