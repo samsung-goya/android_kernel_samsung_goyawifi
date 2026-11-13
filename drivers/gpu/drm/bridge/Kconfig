@@ -81,6 +81,17 @@ config DRM_PARADE_PS8622
 	---help---
 	  Parade eDP-LVDS bridge chip driver.
 
+config DRM_QUICKLOGIC_VX5B3D
+	tristate "QuickLogic VX5B3D MIPI-to-LVDS bridge"
+	depends on OF && I2C
+	select DRM_MIPI_DSI
+	select DRM_PANEL_BRIDGE
+	select BACKLIGHT_LCD_SUPPORT
+	select BACKLIGHT_CLASS_DEVICE
+	help
+	  QuickLogic VX5B3D MIPI DSI to single-channel LVDS bridge driver
+	  with integrated PWM backlight controller support.
+
 config DRM_SIL_SII8620
 	tristate "Silicon Image SII8620 HDMI/MHL bridge"
 	depends on OF
