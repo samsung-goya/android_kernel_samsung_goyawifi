@@ -411,7 +411,7 @@ int etnaviv_gem_cpu_prep(struct drm_gem_object *obj, u32 op,
 			return ret == 0 ? -ETIMEDOUT : ret;
 	}
 
-	if (etnaviv_obj->flags & ETNA_BO_CACHED) {
+	if (etnaviv_obj->flags & (ETNA_BO_CACHED | ETNA_BO_WC)) {
 		dma_sync_sg_for_cpu(dev->dev, etnaviv_obj->sgt->sgl,
 				    etnaviv_obj->sgt->nents,
 				    etnaviv_op_to_dma_dir(op));
@@ -426,13 +426,16 @@ int etnaviv_gem_cpu_fini(struct drm_gem_object *obj)
 	struct drm_device *dev = obj->dev;
 	struct etnaviv_gem_object *etnaviv_obj = to_etnaviv_bo(obj);
 
-	if (etnaviv_obj->flags & ETNA_BO_CACHED) {
+	if (etnaviv_obj->flags & (ETNA_BO_CACHED | ETNA_BO_WC)) {
 		/* fini without a prep is almost certainly a userspace error */
-		WARN_ON(etnaviv_obj->last_cpu_prep_op == 0);
-		dma_sync_sg_for_device(dev->dev, etnaviv_obj->sgt->sgl,
-			etnaviv_obj->sgt->nents,
-			etnaviv_op_to_dma_dir(etnaviv_obj->last_cpu_prep_op));
-		etnaviv_obj->last_cpu_prep_op = 0;
+		if (etnaviv_obj->flags & ETNA_BO_CACHED)
+			WARN_ON(etnaviv_obj->last_cpu_prep_op == 0);
+		if (etnaviv_obj->last_cpu_prep_op) {
+			dma_sync_sg_for_device(dev->dev, etnaviv_obj->sgt->sgl,
+				etnaviv_obj->sgt->nents,
+				etnaviv_op_to_dma_dir(etnaviv_obj->last_cpu_prep_op));
+			etnaviv_obj->last_cpu_prep_op = 0;
+		}
 	}
 
 	return 0;
