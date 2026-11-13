@@ -105,6 +105,10 @@
 #define LCD_SPU_SRAM_PARA1		0x01a4
 #define  CFG_CSB_256x8			BIT(13)
 #define  CFG_PDWN256x8			BIT(5)
+#define  CFG_PDWN32x32			BIT(3)
+#define  CFG_PDWN16x66			BIT(2)
+#define  CFG_PDWN32x66			BIT(1)
+#define  CFG_PDWN64x66			BIT(0)
 
 #define LCD_CFG_SCLK_DIV		0x01a8
 #define  SCLK_SRC_DISP1			(0x1 << 30)

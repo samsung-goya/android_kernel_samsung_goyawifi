@@ -279,7 +279,7 @@ static void mmp_plane_atomic_update(struct drm_plane *plane,
 	const struct mmp_format_info *fmt;
 	u32 src_w, src_h, dst_w, dst_h;
 	dma_addr_t paddr;
-	u32 ctrl0;
+	u32 ctrl0, para1, pdwn_mask;
 
 	if (!state->crtc || !state->fb || !state->visible)
 		return;
@@ -287,6 +287,14 @@ static void mmp_plane_atomic_update(struct drm_plane *plane,
 	fmt = mmp_lookup_format(state->fb->format->format);
 	if (!fmt)
 		return;
+
+	pdwn_mask = mplane->is_overlay ? (CFG_PDWN16x66 | CFG_PDWN32x66) :
+					 CFG_PDWN64x66;
+	para1 = readl(mplane->regs + LCD_SPU_SRAM_PARA1);
+	if (para1 & pdwn_mask) {
+		para1 &= ~pdwn_mask;
+		writel(para1, mplane->regs + LCD_SPU_SRAM_PARA1);
+	}
 
 	paddr = mmp_plane_fb_addr(state, 0);
 	src_w = drm_rect_width(&state->src) >> 16;
@@ -320,7 +328,8 @@ static void mmp_plane_atomic_update(struct drm_plane *plane,
 	}
 
 	ctrl0 = readl(mplane->regs + LCD_SPU_DMA_CTRL0);
-	ctrl0 &= ~lregs->ctrl0_mask;
+	ctrl0 &= ~(lregs->ctrl0_mask | CFG_NOBLENDING | CFG_CBSH_ENA |
+		   CFG_PALETTE_ENA);
 	ctrl0 |= CFG_ARBFAST_ENA | lregs->ena_bit |
 		 ((u32)fmt->hw_fmt << lregs->fmt_shift);
 	if (fmt->swaprb)
@@ -353,6 +362,11 @@ static void mmp_plane_atomic_disable(struct drm_plane *plane,
 		afa &= ~AFA_DMA_TWO_ZOOM_PN;
 		writel(afa, mplane->regs + LCD_AFA_ALL2ONE);
 	}
+
+	writel(readl(mplane->regs + LCD_SPU_SRAM_PARA1) |
+	       (mplane->is_overlay ? (CFG_PDWN16x66 | CFG_PDWN32x66) :
+				     CFG_PDWN64x66),
+	       mplane->regs + LCD_SPU_SRAM_PARA1);
 }
 
 static void mmp_plane_reset(struct drm_plane *plane)

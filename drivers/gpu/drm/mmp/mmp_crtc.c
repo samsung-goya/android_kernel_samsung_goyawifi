@@ -129,11 +129,13 @@ static void mmp_crtc_mode_set_nofb(struct drm_crtc *crtc)
 
 	writel(0x0000fff0, mcrtc->regs + LCD_TOP_CTRL);
 	writel(0, mcrtc->regs + LCD_SPU_SRAM_CTRL);
+	writel(CFG_PDWN256x8, mcrtc->regs + LCD_SPU_SRAM_PARA1);
 	writel(0, mcrtc->regs + LCD_AFA_ALL2ONE);
 	writel(0, mcrtc->regs + LCD_SQULN1_CTRL);
 	writel(0, mcrtc->regs + LCD_SQULN2_CTRL);
 	writel(CFG_CYC_BURST_LEN16, mcrtc->regs + LCD_SPU_IOPAD_CONTROL);
 	writel(0, mcrtc->regs + LCD_SPU_BLANKCOLOR);
+	writel(0, mcrtc->regs + LCD_SPU_DMA_CTRL0);
 	writel(0x28320081, mcrtc->regs + LCD_SPU_DMA_CTRL1);
 
 	writel((mode->vtotal << 16) | htot_hw, mcrtc->regs + LCD_SPU_V_H_TOTAL);
