@@ -514,8 +514,11 @@ static void mmp_dsi_encoder_enable(struct drm_encoder *encoder)
 	mmp_dsi_set_video_timings(mdsi);
 
 	lane_mask = GENMASK(mdsi->lanes - 1, 0);
+	writel(0, mdsi->regs + DSI_PHY_CTRL_2);
+	usleep_range(10, 20);
 	writel(lane_mask << 4, mdsi->regs + DSI_PHY_CTRL_2);
 	writel(DSI_CPU_CMD_1_LPDT(lane_mask), mdsi->regs + DSI_CPU_CMD_1);
+	usleep_range(1000, 2000);
 	writel(DSI_CTRL_0_LCD1_TX_EN | DSI_CTRL_0_LCD1_EN,
 	       mdsi->regs + DSI_CTRL_0);
 	(void)readl(mdsi->regs + DSI_CTRL_0);

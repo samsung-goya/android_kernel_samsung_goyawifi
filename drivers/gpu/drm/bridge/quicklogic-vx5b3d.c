@@ -306,8 +306,9 @@ static void vx5b3d_bridge_pre_enable(struct drm_bridge *bridge)
 	mutex_lock(&vx->lock);
 
 	gpiod_set_value_cansleep(vx->pwr_en_gpio, 1);
+	usleep_range(10000, 12000);
 	gpiod_set_value_cansleep(vx->reset_gpio, 1);
-	usleep_range(30, 50);
+	usleep_range(1000, 2000);
 	gpiod_set_value_cansleep(vx->reset_gpio, 0);
 	msleep(32);
 
@@ -340,21 +341,31 @@ err_dsi:
 static void vx5b3d_bridge_enable(struct drm_bridge *bridge)
 {
 	struct vx5b3d *vx = bridge_to_vx5b3d(bridge);
-	int ret;
+	int attempt, ret = 0;
 
 	mutex_lock(&vx->lock);
 
 	/*
 	 * DSI 4-lane video stream and LCDC DMA are already live here.
-	 * Ungate LVDS TX, wait 110 ms for panel TCON lock, then turn on PWM +
-	 * RT8511B boost to avoid white flash at power-on/unblank.
+	 * Allow DSI HS clock/link a brief settle window, ungate LVDS TX,
+	 * wait 110 ms for panel TCON lock, then turn on PWM + RT8511B boost
+	 * to avoid white flash at power-on/unblank.
 	 */
-	ret = vx5b3d_i2c_write_reg(vx, VX5B3D_REG_LVDS_TX_CTRL,
-				   VX5B3D_LVDS_TX_ENABLE);
+	usleep_range(2000, 3000);
+	for (attempt = 0; attempt < 10; attempt++) {
+		ret = vx5b3d_i2c_write_reg(vx, VX5B3D_REG_LVDS_TX_CTRL,
+					   VX5B3D_LVDS_TX_ENABLE);
+		if (!ret)
+			break;
+		usleep_range(5000, 6000);
+	}
 	if (ret) {
 		dev_err(vx->dev, "failed to enable LVDS TX: %d\n", ret);
 		goto out_unlock;
 	}
+	if (attempt)
+		dev_info(vx->dev, "enabled LVDS TX after %d I2C retries\n",
+			 attempt);
 
 	msleep(110);
 
@@ -502,12 +513,12 @@ static int vx5b3d_probe(struct i2c_client *client,
 	if (IS_ERR(vx->pwr_en_gpio))
 		return PTR_ERR(vx->pwr_en_gpio);
 
-	vx->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_ASIS);
+	vx->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
 	if (IS_ERR(vx->reset_gpio))
 		return PTR_ERR(vx->reset_gpio);
 
 	vx->led_en_gpio = devm_gpiod_get_optional(dev, "backlight-enable",
-						  GPIOD_ASIS);
+						  GPIOD_OUT_HIGH);
 	if (IS_ERR(vx->led_en_gpio))
 		return PTR_ERR(vx->led_en_gpio);
 
