@@ -68,25 +68,43 @@
 					 CFG_DMA_HSMOOTH | CFG_DMA_TSTMODE | \
 					 CFG_DMA_SWAP_MASK | CFG_YUV2RGB_DMA | \
 					 CFG_DMA_ENA)
+#define  CFG_NOBLENDING			BIT(31)
+#define  CFG_GAMMA_ENA			BIT(30)
+#define  CFG_CBSH_ENA			BIT(29)
+#define  CFG_PALETTE_ENA		BIT(28)
 
 #define LCD_SPU_DMA_CTRL1		0x0194
 #define  CFG_FRAME_TRIG			BIT(31)
 #define  CFG_VSYNC_TRIG(x)		((x) << 28)
 #define  CFG_VSYNC_TRIG_MASK		GENMASK(30, 28)
 #define  CFG_VSYNC_INV			BIT(27)
+#define  CFG_COLOR_KEY_MODE(x)		((x) << 24)
+#define  CFG_COLOR_KEY_MASK		GENMASK(26, 24)
 #define  CFG_LNBUF_ENA			BIT(22)
 #define  CFG_GATED_ENA			BIT(21)
 #define  CFG_PWRDN_ENA			BIT(20)
 #define  CFG_ALPHA_MODE(x)		((x) << 16)
 #define  CFG_ALPHA_MODE_MASK		GENMASK(17, 16)
+#define  CFG_ALPHAM_VIDEO		CFG_ALPHA_MODE(0)
+#define  CFG_ALPHAM_GRA			CFG_ALPHA_MODE(1)
+#define  CFG_ALPHAM_CFG			CFG_ALPHA_MODE(2)
 #define  CFG_ALPHA(x)			((x) << 8)
 #define  CFG_ALPHA_MASK			GENMASK(15, 8)
 #define  CFG_PXLCMD(x)			((x) << 0)
 
 #define LCD_SPU_SRAM_CTRL		0x0198
+#define  SRAM_READ			(0 << 14)
+#define  SRAM_WRITE			(2 << 14)
+#define  SRAM_INIT			(3 << 14)
+#define  SRAM_ADDR_LCDID(x)		((x) << 8)
+#define  SRAM_GAMMA_YR			0x0
+#define  SRAM_GAMMA_UG			0x1
+#define  SRAM_GAMMA_VB			0x2
 #define LCD_SPU_SRAM_WRDAT		0x019c
 #define LCD_SPU_SRAM_PARA0		0x01a0
 #define LCD_SPU_SRAM_PARA1		0x01a4
+#define  CFG_CSB_256x8			BIT(13)
+#define  CFG_PDWN256x8			BIT(5)
 
 #define LCD_CFG_SCLK_DIV		0x01a8
 #define  SCLK_SRC_DISP1			(0x1 << 30)
@@ -108,6 +126,11 @@
 #define  CFG_DUMB_ENA			BIT(0)
 
 #define LCD_SPU_IOPAD_CONTROL		0x01bc
+#define  CFG_CSC_MASK			GENMASK(9, 8)
+#define  CFG_CSC_YUV_CCIR709		BIT(9)
+#define  CFG_CSC_YUV_CCIR601		0
+#define  CFG_CSC_RGB_STUDIO		BIT(8)
+#define  CFG_CSC_RGB_COMPUTER		0
 #define  CFG_CYC_BURST_LEN16		BIT(4)
 
 #define LCD_SPU_IRQ_ENA			0x01c0
@@ -125,10 +148,12 @@
 #define LCD_SQULN1_CTRL			0x01e0
 #define LCD_SQULN2_CTRL			0x01e4
 #define LCD_AFA_ALL2ONE			0x01e8
+#define  AFA_DMA_TWO_ZOOM_PN		BIT(20)
 
 #define TIMING_MASTER_CONTROL		0x01f4
 #define  MASTER_ENV(id)			BIT((id) + 6)
 #define  MASTER_ENH(id)			BIT((id) + 4)
+#define  YUV420SP_SWAPUV_PN		BIT(0)
 
 /* MIPI DSI Host (0xd420b800) offsets */
 #define DSI_CTRL_0			0x0000

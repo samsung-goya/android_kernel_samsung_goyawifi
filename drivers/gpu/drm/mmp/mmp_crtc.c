@@ -10,11 +10,15 @@
 
 #include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
+#include <drm/drm_color_mgmt.h>
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_fourcc.h>
 #include <drm/drm_vblank.h>
 
 #include "mmp_drv.h"
 #include "mmp_regs.h"
+
+#define MMP_GAMMA_LUT_SIZE	256
 
 static int mmp_crtc_clks_enable(struct mmp_crtc *mcrtc)
 {
@@ -82,6 +86,11 @@ static int mmp_crtc_atomic_check(struct drm_crtc *crtc,
 				 struct drm_crtc_state *state)
 {
 	if (state->enable && (state->mode.flags & DRM_MODE_FLAG_INTERLACE))
+		return -EINVAL;
+
+	if (state->gamma_lut &&
+	    state->gamma_lut->length != MMP_GAMMA_LUT_SIZE *
+					sizeof(struct drm_color_lut))
 		return -EINVAL;
 
 	return 0;
@@ -201,12 +210,102 @@ static void mmp_crtc_atomic_disable(struct drm_crtc *crtc,
 	}
 }
 
+static void mmp_crtc_update_blending(struct mmp_crtc *mcrtc)
+{
+	struct drm_crtc *crtc = &mcrtc->base;
+	struct drm_plane_state *gra_state = mcrtc->primary.base.state;
+	struct drm_plane_state *dma_state = mcrtc->overlay.base.state;
+	bool gra_vis = gra_state && gra_state->crtc == crtc &&
+		       gra_state->visible;
+	bool dma_vis = dma_state && dma_state->crtc == crtc &&
+		       dma_state->visible;
+	u8 gra_alpha = gra_vis ? (gra_state->alpha >> 8) : 0;
+	u8 dma_alpha = dma_vis ? (dma_state->alpha >> 8) : 0;
+	bool gra_px_alpha = gra_vis && gra_state->fb &&
+			    gra_state->fb->format->has_alpha;
+	bool dma_px_alpha = dma_vis && dma_state->fb &&
+			    dma_state->fb->format->has_alpha;
+	u32 ctrl1, blend;
+
+	if (gra_vis) {
+		if (gra_px_alpha && gra_alpha == 0xff)
+			blend = CFG_ALPHAM_GRA | CFG_ALPHA(0x00);
+		else
+			blend = CFG_ALPHAM_CFG | CFG_ALPHA(255 - gra_alpha);
+	} else if (dma_vis) {
+		if (dma_px_alpha && dma_alpha == 0xff)
+			blend = CFG_ALPHAM_VIDEO | CFG_ALPHA(0xff);
+		else
+			blend = CFG_ALPHAM_CFG | CFG_ALPHA(dma_alpha);
+	} else {
+		blend = CFG_ALPHAM_CFG | CFG_ALPHA(0x00);
+	}
+
+	ctrl1 = readl(mcrtc->regs + LCD_SPU_DMA_CTRL1);
+	ctrl1 &= ~(CFG_ALPHA_MODE_MASK | CFG_ALPHA_MASK);
+	ctrl1 |= blend;
+	writel(ctrl1, mcrtc->regs + LCD_SPU_DMA_CTRL1);
+}
+
+static void mmp_crtc_update_gamma(struct mmp_crtc *mcrtc,
+				  const struct drm_crtc_state *state)
+{
+	struct drm_color_lut *lut;
+	u32 ctrl0, para1;
+	unsigned int i;
+
+	ctrl0 = readl(mcrtc->regs + LCD_SPU_DMA_CTRL0);
+	ctrl0 &= ~CFG_GAMMA_ENA;
+	writel(ctrl0, mcrtc->regs + LCD_SPU_DMA_CTRL0);
+
+	if (!state->gamma_lut)
+		return;
+
+	lut = (struct drm_color_lut *)state->gamma_lut->data;
+
+	para1 = readl(mcrtc->regs + LCD_SPU_SRAM_PARA1);
+	para1 &= ~CFG_PDWN256x8;
+	para1 |= CFG_CSB_256x8;
+	writel(para1, mcrtc->regs + LCD_SPU_SRAM_PARA1);
+
+	for (i = 0; i < MMP_GAMMA_LUT_SIZE; i++) {
+		writel(drm_color_lut_extract(lut[i].red, 8),
+		       mcrtc->regs + LCD_SPU_SRAM_WRDAT);
+		writel(SRAM_WRITE | SRAM_ADDR_LCDID(SRAM_GAMMA_YR) | i,
+		       mcrtc->regs + LCD_SPU_SRAM_CTRL);
+
+		writel(drm_color_lut_extract(lut[i].green, 8),
+		       mcrtc->regs + LCD_SPU_SRAM_WRDAT);
+		writel(SRAM_WRITE | SRAM_ADDR_LCDID(SRAM_GAMMA_UG) | i,
+		       mcrtc->regs + LCD_SPU_SRAM_CTRL);
+
+		writel(drm_color_lut_extract(lut[i].blue, 8),
+		       mcrtc->regs + LCD_SPU_SRAM_WRDAT);
+		writel(SRAM_WRITE | SRAM_ADDR_LCDID(SRAM_GAMMA_VB) | i,
+		       mcrtc->regs + LCD_SPU_SRAM_CTRL);
+	}
+
+	para1 &= ~CFG_CSB_256x8;
+	writel(para1, mcrtc->regs + LCD_SPU_SRAM_PARA1);
+
+	ctrl0 |= CFG_GAMMA_ENA;
+	writel(ctrl0, mcrtc->regs + LCD_SPU_DMA_CTRL0);
+}
+
 static void mmp_crtc_atomic_flush(struct drm_crtc *crtc,
 				  struct drm_crtc_state *old_state)
 {
 	struct mmp_crtc *mcrtc = to_mmp_crtc(crtc);
 	struct drm_pending_vblank_event *event = crtc->state->event;
 	unsigned long flags;
+
+	if (crtc->state->active) {
+		mmp_crtc_update_blending(mcrtc);
+		if (crtc->state->color_mgmt_changed ||
+		    (drm_atomic_crtc_needs_modeset(crtc->state) &&
+		     crtc->state->gamma_lut))
+			mmp_crtc_update_gamma(mcrtc, crtc->state);
+	}
 
 	if (!event)
 		return;
@@ -295,6 +394,7 @@ static const struct drm_crtc_funcs mmp_crtc_funcs = {
 	.reset = drm_atomic_helper_crtc_reset,
 	.atomic_duplicate_state = drm_atomic_helper_crtc_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_crtc_destroy_state,
+	.gamma_set = drm_atomic_helper_legacy_gamma_set,
 	.enable_vblank = mmp_crtc_enable_vblank,
 	.disable_vblank = mmp_crtc_disable_vblank,
 };
@@ -329,6 +429,7 @@ int mmp_crtc_init(struct drm_device *drm, struct mmp_crtc *mcrtc,
 		return ret;
 
 	drm_crtc_helper_add(&mcrtc->base, &mmp_crtc_helper_funcs);
+	drm_crtc_enable_color_mgmt(&mcrtc->base, 0, false, MMP_GAMMA_LUT_SIZE);
 	return 0;
 }
 
