@@ -1,0 +1,32 @@
+Marvell PXA988/MMP Display Controller & MIPI DSI Host
+======================================================
+
+LCD Controller (LCDC)
+---------------------
+
+Required properties:
+- compatible: "marvell,pxa988-lcd"
+- reg: Physical base address and size of LCDC registers (e.g. 0xd420b000 0x300).
+- interrupts: LCDC IRQ specifier.
+- clocks: Phandles for the display clocks ("hclk", "axi", "lcd"; optional
+  "dsi_phy" and "dsi_esc" when operating in bootloader-takeover mode).
+- clock-names: Corresponding names ("hclk", "axi", "lcd", optionally
+  "dsi_phy", "dsi_esc").
+
+Optional properties:
+- marvell,bootloader-takeover: Retain bootloader-initialized display timings
+  and expose a fixed connector for static scanout debugging without
+  attaching the MIPI DSI pipeline.
+- port: OF graph output port connected to the MIPI DSI host input port.
+
+MIPI DSI Host
+-------------
+
+Required properties:
+- compatible: "marvell,pxa988-dsi"
+- reg: Physical base address and size of MIPI DSI registers (0xd420b800 0x200).
+- interrupts: MIPI DSI IRQ specifier.
+- clocks: Phandles for "dsi_phy" and "dsi_esc".
+- clock-names: "dsi_phy", "dsi_esc".
+- ports: OF graph node containing port@0 (input from LCDC) and port@1 (output
+  to downstream DSI bridge or panel).

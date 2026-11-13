@@ -1,0 +1,8 @@
+BOE BA070WS1-400 7.0" WSVGA (1024x600) LVDS Panel
+===================================================
+
+Required properties:
+- compatible: Shall contain "boe,ba070ws1-400" followed by "panel-lvds".
+
+See Documentation/devicetree/bindings/display/panel/panel-lvds.txt for the
+remaining generic LVDS panel properties.

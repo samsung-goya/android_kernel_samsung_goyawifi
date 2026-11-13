@@ -1,0 +1,15 @@
+QuickLogic VX5B3D MIPI DSI to LVDS Bridge
+=========================================
+
+Required properties:
+- compatible: "quicklogic,vx5b3d"
+- reg: I2C slave address (0x64).
+- vdd12-supply: Regulator supplying the 1.2V core rail.
+- vdd18-supply: Regulator supplying the 1.8V IO rail.
+- ports: OF graph node containing port@0 (MIPI DSI input) and port@1 (LVDS
+  panel output).
+
+Optional properties:
+- enable-gpios: GPIO specifier for the 3.3V bridge LVDS TX power enable pin.
+- reset-gpios: GPIO specifier for the active-low reset pin.
+- backlight-enable-gpios: GPIO specifier for the RT8511B LED boost enable pin.
