@@ -502,6 +502,20 @@ static struct mmp_clk_mix_config sdh2_mix_config = {
 	.reg_info = DEFINE_MIX_REG_INFO(3, 8, 1, 6, 11),
 };
 
+static const char * const lcd_parent_names[] = {"pll1_624", "pll1_416"};
+
+static const struct clk_div_table lcd_div_table[] = {
+	{ .val = 0, .div = 1 },
+	{ .val = 2, .div = 2 },
+	{ .val = 3, .div = 3 },
+	{ .val = 4, .div = 4 },
+	{ .val = 6, .div = 6 },
+	{ .val = 8, .div = 8 },
+	{ .val = 12, .div = 12 },
+	{ .val = 16, .div = 16 },
+	{ }
+};
+
 static struct mmp_param_gate_clk apmu_gate_clks[] = {
 	{PXA988_CLK_DFC, "dfc_clk", "pll1_4",
 	 CLK_SET_RATE_PARENT, APMU_DFC, 0x19b, 0x19b, 0x0, 0, NULL},
@@ -511,17 +525,15 @@ static struct mmp_param_gate_clk apmu_gate_clks[] = {
 	{PXA988_CLK_USB, "usb_clk", "usb_pll",
 	 0, APMU_USB, 0x9, 0x9, 0x0, 0, &usb_lock},
 
-	/* Display clocks: must keep CLK_IGNORE_UNUSED so simple-framebuffer survives */
+	/* Display clocks: keep CLK_IGNORE_UNUSED until DRM takes full control */
 	{PXA988_CLK_LCD_HCLK, "lcd_hclk", "axi",
-	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DISP1, 0x24, 0x24, 0x0, 0, &disp_lock},
+	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DISP1, 0x24, 0x24, 0x04, 0, &disp_lock},
 	{PXA988_CLK_LCD_AXI, "lcd_axi", "axi",
-	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DISP1, 0x8, 0x8, 0x0, 0, &disp_lock},
-	{PXA988_CLK_LCD, "lcd_clk", "pll1_624",
-	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DISP1, 0x12, 0x12, 0x0, 0, &disp_lock},
+	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DISP1, 0x10008, 0x10008, 0x10000, 0, &disp_lock},
+	{PXA988_CLK_LCD, "lcd_clk", "lcd_div",
+	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DISP1, 0x13, 0x13, 0x03, 0, &disp_lock},
 	{PXA988_CLK_DSI_PHY, "dsi_phy_clk", "pll1_624",
-	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DSI1, 0x24, 0x24, 0x0, 0, &disp_lock},
-	{PXA988_CLK_DSI_ESC, "dsi_esc_clk", "vctcxo",
-	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DSI1, 0x18, 0x18, 0x0, 0, &disp_lock},
+	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APMU_DSI1, 0x3c, 0x3c, 0x18, 0, &disp_lock},
 
 	/* CCIC camera clocks */
 	{PXA988_CLK_CCIC_AXI, "ccic_axi", "axi",
@@ -584,6 +596,20 @@ static void __init pxa988_axi_periph_clk_init(struct pxa988_clk_unit *pxa_unit)
 				    pxa_unit->apmu_base + APMU_SDH2,
 				    0x12, 0x12, 0x0, 0, &sdh2_lock);
 	mmp_clk_add(unit, PXA988_CLK_SDH2, clk);
+
+	/* Register LCD functional mux/divider and fixed 52 MHz DSI escape clock */
+	clk = clk_register_mux(NULL, "lcd_mux", lcd_parent_names,
+			       ARRAY_SIZE(lcd_parent_names),
+			       CLK_SET_RATE_PARENT | CLK_SET_RATE_NO_REPARENT,
+			       pxa_unit->apmu_base + APMU_DISP1,
+			       6, 1, 0, &disp_lock);
+	clk = clk_register_divider_table(NULL, "lcd_div", "lcd_mux",
+					 CLK_SET_RATE_PARENT,
+					 pxa_unit->apmu_base + APMU_DISP1,
+					 10, 5, 0, lcd_div_table, &disp_lock);
+	clk = clk_register_fixed_factor(NULL, "dsi_esc_clk", "pll1_624",
+					CLK_SET_RATE_PARENT, 1, 12);
+	mmp_clk_add(unit, PXA988_CLK_DSI_ESC, clk);
 
 	/* Register general APMU gates */
 	mmp_register_gate_clks(unit, apmu_gate_clks, pxa_unit->apmu_base,
@@ -673,6 +699,11 @@ static void __init pxa988_clk_misc_init(struct pxa988_clk_unit *pxa_unit)
 			iounmap(aib_mmc);
 		}
 	}
+
+	/* Configure DSI PHY slow preroll (0x1a) and 52 MHz escape clock sel (0) */
+	val = readl_relaxed(pxa_unit->apmu_base + APMU_DSI1);
+	val = (val & ~((0x1f << 6) | 0x3)) | (0x1a << 6);
+	writel_relaxed(val, pxa_unit->apmu_base + APMU_DSI1);
 
 	/* Disable unused NAND (DFC) and AES/GEU controller clocks */
 	writel_relaxed(0x0, pxa_unit->apmu_base + APMU_DFC);
