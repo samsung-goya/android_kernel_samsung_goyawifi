@@ -216,7 +216,11 @@ static int pm80x_rtc_set_alarm(struct device *dev, struct rtc_wkalrm *alrm)
 		base, data, ticks);
 
 	if (info->chip->type == CHIP_PM822) {
+		unsigned long now = ticks;
+
 		ticks = rtc_tm_to_time64(&alrm->time);
+		if (alrm->enabled && ticks <= now)
+			return -ETIME;
 		data = ticks - base;
 	} else {
 		rtc_time64_to_tm(ticks, &now_tm);
@@ -324,6 +328,8 @@ static int pm80x_rtc_probe(struct platform_device *pdev)
 
 	info->rtc_dev->ops = &pm80x_rtc_ops;
 	info->rtc_dev->range_max = U32_MAX;
+	/* 1s alarm resolution cannot emulate UIE without rollover races */
+	info->rtc_dev->uie_unsupported = 1;
 
 	ret = rtc_register_device(info->rtc_dev);
 	if (ret) {
