@@ -583,3 +583,12 @@
 &lcd {
 	status = "okay";
 };
+
+&gc_power {
+	power-supply = <&buck1>;
+	status = "okay";
+};
+
+&gpu {
+	status = "okay";
+};

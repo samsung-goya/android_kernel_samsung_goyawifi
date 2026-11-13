@@ -141,6 +141,8 @@ config MACH_PXA988_DT
 	select PINCTRL_SINGLE
 	select COMMON_CLK
 	select ARCH_HAS_RESET_CONTROLLER
+	select PM_GENERIC_DOMAINS if PM
+	select PM_GENERIC_DOMAINS_OF if PM && OF
 	help
 	  Include support for Marvell PXA988 and PXA986 dual-core Cortex-A9
 	  SoCs using the Flattened Device Tree, including the Samsung Galaxy

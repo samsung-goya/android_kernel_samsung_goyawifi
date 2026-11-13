@@ -366,5 +366,35 @@
 				};
 			};
 		};
+
+		gc_power: power-controller@d42828cc {
+			compatible = "marvell,pxa988-gc-power";
+			reg = <0xd42828cc 0x4>,
+			      <0xd42828d8 0x4>,
+			      <0xd42828dc 0x4>,
+			      <0xd42828f0 0x4>;
+			reg-names = "apmu-gc", "pwr-ctrl", "pwr-tmr", "pwr-stat";
+			clocks = <&soc_clocks PXA988_CLK_GC_HCLK>,
+				 <&soc_clocks PXA988_CLK_GC_AXI>,
+				 <&soc_clocks PXA988_CLK_GC>;
+			clock-names = "reg", "bus", "core";
+			#power-domain-cells = <0>;
+			status = "disabled";
+		};
+
+		gpu: gpu@c0400000 {
+			compatible = "vivante,gc";
+			reg = <0xc0400000 0x40000>;
+			interrupts = <GIC_SPI 8 IRQ_TYPE_LEVEL_HIGH>;
+			clocks = <&soc_clocks PXA988_CLK_GC_HCLK>,
+				 <&soc_clocks PXA988_CLK_GC_AXI>,
+				 <&soc_clocks PXA988_CLK_GC>;
+			clock-names = "reg", "bus", "core";
+			assigned-clocks = <&soc_clocks PXA988_CLK_GC>,
+					  <&soc_clocks PXA988_CLK_GC_AXI>;
+			assigned-clock-rates = <156000000>, <208000000>;
+			power-domains = <&gc_power>;
+			status = "disabled";
+		};
 	};
 };

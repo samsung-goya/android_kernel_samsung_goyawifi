@@ -1,0 +1,34 @@
+Marvell PXA988/PXA986 3D GPU (GC) Power Domain Controller
+
+This binding describes the APMU power domain controller for the Vivante 3D GPU
+(GC) block on Marvell PXA988/PXA986 SoCs.
+
+Required properties:
+- compatible: Must be "marvell,pxa988-gc-power".
+- reg: Four register regions in order:
+  1. APMU_GC control register
+  2. APMU_PWR_CTRL_REG register
+  3. APMU_PWR_BLK_TMR_REG register
+  4. APMU_PWR_STATUS_REG register
+- reg-names: Must contain "apmu-gc", "pwr-ctrl", "pwr-tmr", "pwr-stat".
+- #power-domain-cells: Must be 0.
+- clocks: Phandles to the GC register, AXI bus, and core clocks.
+- clock-names: Must contain "reg", "bus", "core".
+
+Optional properties:
+- power-supply: Phandle to the GPU supply regulator.
+
+Example:
+	gc_power: power-controller@d42828cc {
+		compatible = "marvell,pxa988-gc-power";
+		reg = <0xd42828cc 0x4>,
+		      <0xd42828d8 0x4>,
+		      <0xd42828dc 0x4>,
+		      <0xd42828f0 0x4>;
+		reg-names = "apmu-gc", "pwr-ctrl", "pwr-tmr", "pwr-stat";
+		clocks = <&soc_clocks PXA988_CLK_GC_HCLK>,
+			 <&soc_clocks PXA988_CLK_GC_AXI>,
+			 <&soc_clocks PXA988_CLK_GC>;
+		clock-names = "reg", "bus", "core";
+		#power-domain-cells = <0>;
+	};
