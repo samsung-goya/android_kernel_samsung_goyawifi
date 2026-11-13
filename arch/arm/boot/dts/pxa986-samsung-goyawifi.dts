@@ -43,7 +43,7 @@
 			height = <600>;
 			stride = <4096>;
 			format = "a8r8g8b8";
-			status = "okay";
+			status = "disabled";
 		};
 	};
 
@@ -111,6 +111,57 @@
 		framebuffer_reserved: framebuffer@17000000 {
 			reg = <0x17000000 0x00800000>;
 			no-map;
+		};
+
+		/*
+		 * 64 MiB shared CMA pool in 0x20000000..0x2fffffff (lowmem) for
+		 * DRM scanout, GPU, camera, and VPU buffers.
+		 */
+		linux,cma {
+			compatible = "shared-dma-pool";
+			reusable;
+			size = <0x04000000>;
+			alignment = <0x00100000>;
+			alloc-ranges = <0x20000000 0x10000000>;
+			linux,cma-default;
+		};
+	};
+
+	panel_lcd_3v3: regulator-panel-lcd-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "panel_lcd_3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		gpio = <&gpio 9 GPIO_ACTIVE_HIGH>;
+		enable-active-high;
+		regulator-boot-on;
+	};
+
+	panel: panel {
+		compatible = "boe,ba070ws1-400", "panel-lvds";
+		width-mm = <154>;
+		height-mm = <90>;
+		data-mapping = "vesa-24";
+		power-supply = <&panel_lcd_3v3>;
+
+		panel-timing {
+			clock-frequency = <51919000>;
+			hactive = <1024>;
+			vactive = <600>;
+			hfront-porch = <123>;
+			hsync-len = <120>;
+			hback-porch = <100>;
+			vfront-porch = <13>;
+			vsync-len = <10>;
+			vback-porch = <10>;
+			hsync-active = <1>;
+			vsync-active = <1>;
+		};
+
+		port {
+			panel_in_lvds: endpoint {
+				remote-endpoint = <&vx5b3d_out_panel>;
+			};
 		};
 	};
 
@@ -257,6 +308,37 @@
 		touchscreen-swapped-x-y;
 		zinitix,mode = <0>;
 		linux,keycodes = <KEY_RESERVED KEY_MENU KEY_BACK KEY_RESERVED>;
+	};
+
+	vx5b3d@64 {
+		compatible = "quicklogic,vx5b3d";
+		reg = <0x64>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&display_pins>;
+		vdd12-supply = <&ldo12>;
+		vdd18-supply = <&ldo9>;
+		enable-gpios = <&gpio 19 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio 20 GPIO_ACTIVE_LOW>;
+		backlight-enable-gpios = <&gpio 12 GPIO_ACTIVE_HIGH>;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				vx5b3d_in_dsi: endpoint {
+					remote-endpoint = <&dsi_out_vx5b3d>;
+				};
+			};
+
+			port@1 {
+				reg = <1>;
+				vx5b3d_out_panel: endpoint {
+					remote-endpoint = <&panel_in_lvds>;
+				};
+			};
+		};
 	};
 };
 
@@ -481,5 +563,23 @@
 	max-frequency = <50000000>;
 	assigned-clocks = <&soc_clocks PXA988_CLK_SDH0>;
 	assigned-clock-rates = <52000000>;
+	status = "okay";
+};
+
+/* Full KMS + MIPI DSI -> VX5B3D -> LVDS Panel Display Pipeline */
+&dsi {
+	status = "okay";
+
+	ports {
+		port@1 {
+			reg = <1>;
+			dsi_out_vx5b3d: endpoint {
+				remote-endpoint = <&vx5b3d_in_dsi>;
+			};
+		};
+	};
+};
+
+&lcd {
 	status = "okay";
 };

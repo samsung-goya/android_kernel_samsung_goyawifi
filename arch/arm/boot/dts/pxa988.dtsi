@@ -181,6 +181,48 @@
 				clock-names = "io", "core";
 				status = "disabled";
 			};
+
+			lcd: lcd-controller@d420b000 {
+				compatible = "marvell,pxa988-lcd";
+				reg = <0xd420b000 0x300>;
+				interrupts = <GIC_SPI 41 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_LCD_HCLK>,
+					 <&soc_clocks PXA988_CLK_LCD_AXI>,
+					 <&soc_clocks PXA988_CLK_LCD>,
+					 <&soc_clocks PXA988_CLK_DSI_PHY>,
+					 <&soc_clocks PXA988_CLK_DSI_ESC>;
+				clock-names = "hclk", "axi", "lcd",
+					      "dsi_phy", "dsi_esc";
+				status = "disabled";
+
+				port {
+					lcd_out_dsi: endpoint {
+						remote-endpoint = <&dsi_in_lcd>;
+					};
+				};
+			};
+
+			dsi: dsi@d420b800 {
+				compatible = "marvell,pxa988-dsi";
+				reg = <0xd420b800 0x200>;
+				interrupts = <GIC_SPI 29 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_DSI_PHY>,
+					 <&soc_clocks PXA988_CLK_DSI_ESC>;
+				clock-names = "dsi_phy", "dsi_esc";
+				status = "disabled";
+
+				ports {
+					#address-cells = <1>;
+					#size-cells = <0>;
+
+					port@0 {
+						reg = <0>;
+						dsi_in_lcd: endpoint {
+							remote-endpoint = <&lcd_out_dsi>;
+						};
+					};
+				};
+			};
 		};
 
 		apb@d4000000 {

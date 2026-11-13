@@ -142,6 +142,7 @@
 	display_pins: display-pins {
 		pinctrl-single,pins = <
 			GPIO9  AF0	/* LCD_3P3_EN */
+			GPIO12 AF0	/* LED_BACK_LIGHT_RST */
 			GPIO19 AF0	/* LVDS_3P3_EN */
 			GPIO20 AF0	/* LVDS_RST */
 			VCXO_REQ AF0	/* VCXO clock request */
