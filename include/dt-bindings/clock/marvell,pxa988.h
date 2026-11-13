@@ -84,6 +84,7 @@
 #define PXA988_CLK_GC			118
 #define PXA988_CLK_GC2D			119
 #define PXA988_CLK_GC_SHADER		120
+#define PXA988_CLK_GC_HCLK		121
 
 #define PXA988_NR_CLKS			160
 

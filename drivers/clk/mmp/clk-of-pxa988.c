@@ -489,6 +489,7 @@ static const char * const sdh_parent_names[] = {"pll1_416", "pll1_624"};
 static DEFINE_SPINLOCK(usb_lock);
 static DEFINE_SPINLOCK(disp_lock);
 static DEFINE_SPINLOCK(ccic0_lock);
+static DEFINE_SPINLOCK(gc_lock);
 
 static struct mmp_clk_mix_config sdh0_mix_config = {
 	.reg_info = DEFINE_MIX_REG_INFO(3, 8, 1, 6, 11),
@@ -508,6 +509,14 @@ static const char * const lcd_axi_parent_names[] = {
 
 static struct mmp_clk_mix_config lcd_axi_mix_config = {
 	.reg_info = DEFINE_MIX_REG_INFO(3, 19, 2, 17, 22),
+};
+
+static struct mmp_clk_mix_config gc_mix_config = {
+	.reg_info = DEFINE_MIX_REG_INFO(3, 12, 2, 6, 15),
+};
+
+static struct mmp_clk_mix_config gc_axi_mix_config = {
+	.reg_info = DEFINE_MIX_REG_INFO(3, 17, 2, 20, 16),
 };
 
 static const char * const lcd_parent_names[] = {"pll1_624", "pll1_416"};
@@ -556,10 +565,8 @@ static struct mmp_param_gate_clk apmu_gate_clks[] = {
 	 CLK_SET_RATE_PARENT, APMU_VPU, 0x8, 0x8, 0x0, 0, NULL},
 	{PXA988_CLK_VPU, "vpu_clk", "pll1_416",
 	 CLK_SET_RATE_PARENT, APMU_VPU, 0x30, 0x30, 0x0, 0, NULL},
-	{PXA988_CLK_GC_AXI, "gc_axi", "axi",
-	 CLK_SET_RATE_PARENT, APMU_GC, 0x8, 0x8, 0x0, 0, NULL},
-	{PXA988_CLK_GC, "gc_clk", "pll1_416",
-	 CLK_SET_RATE_PARENT, APMU_GC, 0x30, 0x30, 0x0, 0, NULL},
+	{PXA988_CLK_GC_HCLK, "gc_hclk", "axi",
+	 CLK_SET_RATE_PARENT, APMU_GC, 0x20, 0x20, 0x0, 0, &gc_lock},
 	{PXA988_CLK_GC2D, "gc2d_clk", "pll1_416",
 	 CLK_SET_RATE_PARENT, APMU_GC2D, 0x30, 0x30, 0x0, 0, NULL},
 };
@@ -624,6 +631,31 @@ static void __init pxa988_axi_periph_clk_init(struct pxa988_clk_unit *pxa_unit)
 	clk = clk_register_fixed_factor(NULL, "dsi_esc_clk", "pll1_624",
 					CLK_SET_RATE_PARENT, 1, 12);
 	mmp_clk_add(unit, PXA988_CLK_DSI_ESC, clk);
+
+	/* Register GC (3D GPU) core and AXI mix clocks and gates */
+	gc_mix_config.reg_info.reg_clk_ctrl = pxa_unit->apmu_base + APMU_GC;
+	mmp_clk_register_mix(NULL, "gc_mix",
+			     (const char **)lcd_axi_parent_names,
+			     ARRAY_SIZE(lcd_axi_parent_names),
+			     CLK_SET_RATE_PARENT,
+			     &gc_mix_config, &gc_lock);
+	clk = mmp_clk_register_gate(NULL, "gc_clk", "gc_mix",
+				    CLK_SET_RATE_PARENT,
+				    pxa_unit->apmu_base + APMU_GC,
+				    0x10, 0x10, 0x0, 0, &gc_lock);
+	mmp_clk_add(unit, PXA988_CLK_GC, clk);
+
+	gc_axi_mix_config.reg_info.reg_clk_ctrl = pxa_unit->apmu_base + APMU_GC;
+	mmp_clk_register_mix(NULL, "gc_axi_mix",
+			     (const char **)lcd_axi_parent_names,
+			     ARRAY_SIZE(lcd_axi_parent_names),
+			     CLK_SET_RATE_PARENT,
+			     &gc_axi_mix_config, &gc_lock);
+	clk = mmp_clk_register_gate(NULL, "gc_axi", "gc_axi_mix",
+				    CLK_SET_RATE_PARENT,
+				    pxa_unit->apmu_base + APMU_GC,
+				    0x08, 0x08, 0x0, 0, &gc_lock);
+	mmp_clk_add(unit, PXA988_CLK_GC_AXI, clk);
 
 	/* Register general APMU gates */
 	mmp_register_gate_clks(unit, apmu_gate_clks, pxa_unit->apmu_base,
