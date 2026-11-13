@@ -25,32 +25,29 @@ struct mmp_format_info {
 	bool swapuv;
 	bool swapyu;
 	bool yuv2rgb;
-	bool semiplanar;
 };
 
 static const struct mmp_format_info mmp_formats[] = {
-	{ DRM_FORMAT_XRGB8888,  3, true,  false, false, false, false },
-	{ DRM_FORMAT_XBGR8888,  3, false, false, false, false, false },
-	{ DRM_FORMAT_ARGB8888,  4, true,  false, false, false, false },
-	{ DRM_FORMAT_ABGR8888,  4, false, false, false, false, false },
-	{ DRM_FORMAT_RGB888,    2, true,  false, false, false, false },
-	{ DRM_FORMAT_BGR888,    2, false, false, false, false, false },
-	{ DRM_FORMAT_XRGB1555,  1, true,  false, false, false, false },
-	{ DRM_FORMAT_XBGR1555,  1, false, false, false, false, false },
-	{ DRM_FORMAT_ARGB1555,  1, true,  false, false, false, false },
-	{ DRM_FORMAT_ABGR1555,  1, false, false, false, false, false },
-	{ DRM_FORMAT_RGB565,    0, true,  false, false, false, false },
-	{ DRM_FORMAT_BGR565,    0, false, false, false, false, false },
-	{ DRM_FORMAT_UYVY,      5, false, false, false, true,  false },
-	{ DRM_FORMAT_VYUY,      5, false, true,  false, true,  false },
-	{ DRM_FORMAT_YUYV,      5, false, false, true,  true,  false },
-	{ DRM_FORMAT_YVYU,      5, false, true,  true,  true,  false },
-	{ DRM_FORMAT_YUV422,    6, false, false, false, true,  false },
-	{ DRM_FORMAT_YVU422,    6, false, true,  false, true,  false },
-	{ DRM_FORMAT_YUV420,    7, false, false, false, true,  false },
-	{ DRM_FORMAT_YVU420,    7, false, true,  false, true,  false },
-	{ DRM_FORMAT_NV12,     12, false, false, false, true,  true  },
-	{ DRM_FORMAT_NV21,     12, false, true,  false, true,  true  },
+	{ DRM_FORMAT_XRGB8888,  3, true,  false, false, false },
+	{ DRM_FORMAT_XBGR8888,  3, false, false, false, false },
+	{ DRM_FORMAT_ARGB8888,  4, true,  false, false, false },
+	{ DRM_FORMAT_ABGR8888,  4, false, false, false, false },
+	{ DRM_FORMAT_RGB888,    2, true,  false, false, false },
+	{ DRM_FORMAT_BGR888,    2, false, false, false, false },
+	{ DRM_FORMAT_XRGB1555,  1, true,  false, false, false },
+	{ DRM_FORMAT_XBGR1555,  1, false, false, false, false },
+	{ DRM_FORMAT_ARGB1555,  1, true,  false, false, false },
+	{ DRM_FORMAT_ABGR1555,  1, false, false, false, false },
+	{ DRM_FORMAT_RGB565,    0, true,  false, false, false },
+	{ DRM_FORMAT_BGR565,    0, false, false, false, false },
+	{ DRM_FORMAT_UYVY,      5, false, false, false, true  },
+	{ DRM_FORMAT_VYUY,      5, false, true,  false, true  },
+	{ DRM_FORMAT_YUYV,      5, false, false, true,  true  },
+	{ DRM_FORMAT_YVYU,      5, false, true,  true,  true  },
+	{ DRM_FORMAT_YUV422,    6, false, false, false, true  },
+	{ DRM_FORMAT_YVU422,    6, false, true,  false, true  },
+	{ DRM_FORMAT_YUV420,    7, false, false, false, true  },
+	{ DRM_FORMAT_YVU420,    7, false, true,  false, true  },
 };
 
 static const u32 mmp_primary_formats[] = {
@@ -89,8 +86,6 @@ static const u32 mmp_overlay_formats[] = {
 	DRM_FORMAT_YVU422,
 	DRM_FORMAT_YUV420,
 	DRM_FORMAT_YVU420,
-	DRM_FORMAT_NV12,
-	DRM_FORMAT_NV21,
 };
 
 struct mmp_layer_regs {
@@ -226,7 +221,7 @@ static void mmp_plane_program_yuv(const struct drm_plane_state *state,
 {
 	const struct drm_framebuffer *fb = state->fb;
 	unsigned int num_planes = fb->format->num_planes;
-	u32 csc, yuvsp;
+	u32 csc;
 
 	if (num_planes == 3) {
 		unsigned int u = fmt->swapuv ? 2 : 1;
@@ -241,16 +236,6 @@ static void mmp_plane_program_yuv(const struct drm_plane_state *state,
 		writel(((fb->pitches[v] & 0xffff) << 16) |
 		       (fb->pitches[u] & 0xffff),
 		       mplane->regs + LCD_SPU_DMA_PITCH_UV);
-	} else if (num_planes == 2) {
-		dma_addr_t uv_addr = mmp_plane_fb_addr(state, 1);
-		u32 uv_pitch = fb->pitches[1] & 0xffff;
-
-		writel((u32)uv_addr, mplane->regs + LCD_SPU_DMA_START_ADDR_U0);
-		writel((u32)uv_addr, mplane->regs + LCD_SPU_DMA_START_ADDR_U1);
-		writel((u32)uv_addr, mplane->regs + LCD_SPU_DMA_START_ADDR_V0);
-		writel((u32)uv_addr, mplane->regs + LCD_SPU_DMA_START_ADDR_V1);
-		writel((uv_pitch << 16) | uv_pitch,
-		       mplane->regs + LCD_SPU_DMA_PITCH_UV);
 	}
 
 	csc = readl(mplane->regs + LCD_SPU_IOPAD_CONTROL);
@@ -259,15 +244,6 @@ static void mmp_plane_program_yuv(const struct drm_plane_state *state,
 	       (state->color_encoding == DRM_COLOR_YCBCR_BT709 ?
 		CFG_CSC_YUV_CCIR709 : CFG_CSC_YUV_CCIR601);
 	writel(csc, mplane->regs + LCD_SPU_IOPAD_CONTROL);
-
-	if (fmt->semiplanar) {
-		yuvsp = readl(mplane->regs + TIMING_MASTER_CONTROL);
-		if (fmt->swapuv)
-			yuvsp |= YUV420SP_SWAPUV_PN;
-		else
-			yuvsp &= ~YUV420SP_SWAPUV_PN;
-		writel(yuvsp, mplane->regs + TIMING_MASTER_CONTROL);
-	}
 }
 
 static void mmp_plane_atomic_update(struct drm_plane *plane,

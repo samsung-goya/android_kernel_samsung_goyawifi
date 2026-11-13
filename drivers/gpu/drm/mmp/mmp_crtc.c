@@ -21,7 +21,8 @@
 
 #define MMP_GAMMA_LUT_SIZE	256
 #define MMP_ERR_IRQS		((u32)(DMA_FF_UNDERFLOW | GRA_FF_UNDERFLOW | \
-				       AXI_BUS_ERROR_IRQ))
+				       AXI_BUS_ERROR_IRQ | \
+				       AXI_LATENCY_TOO_LONG_IRQ))
 
 static int mmp_crtc_clks_enable(struct mmp_crtc *mcrtc)
 {
@@ -130,7 +131,8 @@ static void mmp_crtc_mode_set_nofb(struct drm_crtc *crtc)
 	vfp = mode->vsync_start - mode->vdisplay;
 	vbp = mode->vtotal - mode->vsync_end;
 
-	writel(0x0000fff0, mcrtc->regs + LCD_TOP_CTRL);
+	writel(readl(mcrtc->regs + LCD_TOP_CTRL) | 0x0000fff0,
+	       mcrtc->regs + LCD_TOP_CTRL);
 	writel(0, mcrtc->regs + LCD_SPU_SRAM_CTRL);
 	writel(0, mcrtc->regs + LCD_SPU_SRAM_PARA0);
 	writel(CFG_PDWN256x8, mcrtc->regs + LCD_SPU_SRAM_PARA1);
@@ -385,11 +387,12 @@ static irqreturn_t mmp_crtc_irq(int irq, void *data)
 
 	if (handled & MMP_ERR_IRQS)
 		dev_warn_ratelimited(crtc->dev->dev,
-				     "lcdc error irq: 0x%08x (dma_uf=%d gra_uf=%d axi=%d)\n",
+				     "lcdc error irq: 0x%08x (dma_uf=%d gra_uf=%d axi=%d lat=%d)\n",
 				     handled & MMP_ERR_IRQS,
 				     !!(handled & DMA_FF_UNDERFLOW),
 				     !!(handled & GRA_FF_UNDERFLOW),
-				     !!(handled & AXI_BUS_ERROR_IRQ));
+				     !!(handled & AXI_BUS_ERROR_IRQ),
+				     !!(handled & AXI_LATENCY_TOO_LONG_IRQ));
 
 	if (handled & VSYNC_IRQ) {
 		drm_crtc_handle_vblank(crtc);
@@ -469,6 +472,15 @@ int mmp_crtc_irq_init(struct mmp_crtc *mcrtc)
 		return ret;
 
 	/* Ensure all LCDC IRQs start masked and cleared cleanly. */
+	dev_info(mcrtc->base.dev->dev,
+		 "lcdc init: top=0x%08x sram0=0x%08x sram1=0x%08x iopad=0x%08x dma0=0x%08x master=0x%08x axi=%luHz\n",
+		 readl(mcrtc->regs + LCD_TOP_CTRL),
+		 readl(mcrtc->regs + LCD_SPU_SRAM_PARA0),
+		 readl(mcrtc->regs + LCD_SPU_SRAM_PARA1),
+		 readl(mcrtc->regs + LCD_SPU_IOPAD_CONTROL),
+		 readl(mcrtc->regs + LCD_SPU_DMA_CTRL0),
+		 readl(mcrtc->regs + TIMING_MASTER_CONTROL),
+		 mcrtc->clk_axi ? clk_get_rate(mcrtc->clk_axi) : 0);
 	writel(0, mcrtc->regs + LCD_SPU_IRQ_ENA);
 	writel(0, mcrtc->regs + LCD_SPU_IRQ_ISR);
 

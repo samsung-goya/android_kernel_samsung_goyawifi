@@ -160,7 +160,6 @@
 #define TIMING_MASTER_CONTROL		0x01f4
 #define  MASTER_ENV(id)			BIT((id) + 6)
 #define  MASTER_ENH(id)			BIT((id) + 4)
-#define  YUV420SP_SWAPUV_PN		BIT(0)
 
 /* MIPI DSI Host (0xd420b800) offsets */
 #define DSI_CTRL_0			0x0000
