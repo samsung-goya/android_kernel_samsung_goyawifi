@@ -867,6 +867,10 @@ static int i2c_pxa_do_xfer(struct pxa_i2c *i2c, struct i2c_msg *msg, int num)
 	ret = i2c->msg_idx;
 
 	if (!timeout && i2c->msg_num) {
+		dev_warn(&i2c->adap.dev,
+			 "i2c_pxa: timeout (IBMR=%08x ICR=%08x ISR=%08x)\n",
+			 readl(_IBMR(i2c)), readl(_ICR(i2c)),
+			 readl(_ISR(i2c)));
 		i2c_pxa_scream_blue_murder(i2c, "timeout");
 		ret = I2C_RETRY;
 	}
@@ -1143,6 +1147,7 @@ static int i2c_pxa_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num
 
 		if (i2c_debug)
 			dev_dbg(&adap->dev, "Retrying transmission\n");
+		i2c_pxa_reset(i2c);
 		udelay(100);
 	}
 	i2c_pxa_scream_blue_murder(i2c, "exhausted retries");
@@ -1323,6 +1328,12 @@ static int i2c_pxa_probe(struct platform_device *dev)
 	}
 
 	i2c_pxa_reset(i2c);
+	if ((readl(_IBMR(i2c)) & 0x1) == 0) {
+		dev_warn(&dev->dev,
+			 "SDA stuck low at probe (IBMR=%08x), recovering\n",
+			 readl(_IBMR(i2c)));
+		i2c_pxa_reset(i2c);
+	}
 
 	i2c->adap.algo_data = i2c;
 	i2c->adap.dev.parent = &dev->dev;
