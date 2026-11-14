@@ -2339,12 +2339,7 @@ int mwifiex_sta_init_cmd(struct mwifiex_private *priv, u8 first_sta, bool init)
 		if (ret)
 			return -1;
 
-		/*
-		 * SD8777 firmware wedges when IEEE Auto-PS is active alongside
-		 * Bluetooth LE scanning after Host Sleep resume. Keep CAM mode.
-		 */
-		if (priv->bss_type != MWIFIEX_BSS_TYPE_UAP &&
-		    !priv->adapter->sd8777_legacy_txpd) {
+		if (priv->bss_type != MWIFIEX_BSS_TYPE_UAP) {
 			/* Enable IEEE PS by default */
 			priv->adapter->ps_mode = MWIFIEX_802_11_POWER_MODE_PSP;
 			ret = mwifiex_send_cmd(priv,

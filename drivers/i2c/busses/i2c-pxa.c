@@ -209,6 +209,7 @@ struct pxa_i2c {
 	unsigned char		master_code;
 	unsigned long		rate;
 	bool			highmode_enter;
+	bool			shutdown;
 	u32			fm_mask;
 	u32			hs_mask;
 };
@@ -885,6 +886,9 @@ static int i2c_pxa_pio_xfer(struct i2c_adapter *adap,
 	struct pxa_i2c *i2c = adap->algo_data;
 	int ret, i;
 
+	if (i2c->shutdown)
+		return -ESHUTDOWN;
+
 	/* If the I2C controller is disabled we need to reset it
 	  (probably due to a suspend/resume destroying state). We do
 	  this here as we can then avoid worrying about resuming the
@@ -1137,6 +1141,9 @@ static int i2c_pxa_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num
 	struct pxa_i2c *i2c = adap->algo_data;
 	int ret, i;
 
+	if (i2c->shutdown)
+		return -ESHUTDOWN;
+
 	if (in_atomic() || irqs_disabled() || system_state > SYSTEM_RUNNING)
 		return i2c_pxa_pio_xfer(adap, msgs, num);
 
@@ -1371,6 +1378,26 @@ static int i2c_pxa_remove(struct platform_device *dev)
 	return 0;
 }
 
+static void i2c_pxa_shutdown(struct platform_device *dev)
+{
+	struct pxa_i2c *i2c = platform_get_drvdata(dev);
+
+	if (!i2c)
+		return;
+
+	/*
+	 * Quiesce the bus on restart/halt so a watchdog reset cannot
+	 * interrupt an active transfer and leave a battery-powered slave
+	 * (such as 88PM822 on twsi2) holding SDA low across warm reboot.
+	 * Keep the bus usable on SYSTEM_POWER_OFF for pm822_poweroff().
+	 */
+	if (system_state == SYSTEM_RESTART || system_state == SYSTEM_HALT) {
+		i2c_lock_bus(&i2c->adap, I2C_LOCK_ROOT_ADAPTER);
+		i2c->shutdown = true;
+		i2c_unlock_bus(&i2c->adap, I2C_LOCK_ROOT_ADAPTER);
+	}
+}
+
 #ifdef CONFIG_PM
 static int i2c_pxa_suspend_noirq(struct device *dev)
 {
@@ -1404,6 +1431,7 @@ static const struct dev_pm_ops i2c_pxa_dev_pm_ops = {
 static struct platform_driver i2c_pxa_driver = {
 	.probe		= i2c_pxa_probe,
 	.remove		= i2c_pxa_remove,
+	.shutdown	= i2c_pxa_shutdown,
 	.driver		= {
 		.name	= "pxa2xx-i2c",
 		.pm	= I2C_PXA_DEV_PM_OPS,
