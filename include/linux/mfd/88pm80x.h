@@ -310,6 +310,7 @@ struct pm80x_chip {
 	int irq_mode;
 	unsigned long wu_flag;
 	spinlock_t lock;
+	void *audio_priv;
 };
 
 struct pm80x_platform_data {

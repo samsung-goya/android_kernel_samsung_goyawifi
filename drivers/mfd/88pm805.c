@@ -26,6 +26,8 @@
 #include <linux/irq.h>
 #include <linux/mfd/core.h>
 #include <linux/mfd/88pm80x.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
 
@@ -199,10 +201,12 @@ static int device_805_init(struct pm80x_chip *chip)
 
 	chip->regmap_irq_chip = &pm805_irq_chip;
 
-	ret = device_irq_init_805(chip);
-	if (ret < 0) {
-		dev_err(chip->dev, "Failed to init pm805 irq!\n");
-		goto out_irq_init;
+	if (chip->irq > 0) {
+		ret = device_irq_init_805(chip);
+		if (ret < 0) {
+			dev_err(chip->dev, "Failed to init pm805 irq!\n");
+			goto out_irq_init;
+		}
 	}
 
 	ret = mfd_add_devices(chip->dev, 0, &codec_devs[0],
@@ -217,8 +221,52 @@ static int device_805_init(struct pm80x_chip *chip)
 	return 0;
 
 out_codec:
-	device_irq_exit_805(chip);
+	if (chip->irq_data)
+		device_irq_exit_805(chip);
 out_irq_init:
+	return ret;
+}
+
+static int pm805_enable_pmic_clocks(struct i2c_client *client)
+{
+	struct device_node *pmic_np;
+	struct i2c_client *pmic_client;
+	struct pm80x_chip *pmic_chip;
+	int ret;
+
+	if (!client->dev.of_node)
+		return 0;
+
+	pmic_np = of_parse_phandle(client->dev.of_node, "marvell,pmic", 0);
+	if (!pmic_np)
+		return 0;
+
+	pmic_client = of_find_i2c_device_by_node(pmic_np);
+	of_node_put(pmic_np);
+	if (!pmic_client)
+		return -EPROBE_DEFER;
+
+	pmic_chip = i2c_get_clientdata(pmic_client);
+	if (!pmic_chip || !pmic_chip->regmap) {
+		put_device(&pmic_client->dev);
+		return -EPROBE_DEFER;
+	}
+
+	/*
+	 * 88PM805 I2C requires the companion PMIC's 32 kHz clock to be active
+	 * before reading CHIP_ID.
+	 */
+	ret = regmap_update_bits(pmic_chip->regmap, 0x50, BIT(1), 0);
+	if (!ret)
+		ret = regmap_update_bits(pmic_chip->regmap, 0x55, BIT(1), 0);
+	if (!ret) {
+		msleep(20);
+		ret = regmap_update_bits(pmic_chip->regmap, 0x21, 0x30, 0x30);
+	}
+	if (!ret)
+		msleep(2);
+
+	put_device(&pmic_client->dev);
 	return ret;
 }
 
@@ -228,6 +276,10 @@ static int pm805_probe(struct i2c_client *client,
 	int ret = 0;
 	struct pm80x_chip *chip;
 	struct pm80x_platform_data *pdata = dev_get_platdata(&client->dev);
+
+	ret = pm805_enable_pmic_clocks(client);
+	if (ret)
+		return ret;
 
 	ret = pm80x_init(client);
 	if (ret) {
@@ -246,6 +298,8 @@ static int pm805_probe(struct i2c_client *client,
 	if (pdata && pdata->plat_config)
 		pdata->plat_config(chip, pdata);
 
+	return 0;
+
 err_805_init:
 	pm80x_deinit();
 out_init:
@@ -257,17 +311,25 @@ static int pm805_remove(struct i2c_client *client)
 	struct pm80x_chip *chip = i2c_get_clientdata(client);
 
 	mfd_remove_devices(chip->dev);
-	device_irq_exit_805(chip);
+	if (chip->irq_data)
+		device_irq_exit_805(chip);
 
 	pm80x_deinit();
 
 	return 0;
 }
 
+static const struct of_device_id pm805_of_match[] = {
+	{ .compatible = "marvell,88pm805" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, pm805_of_match);
+
 static struct i2c_driver pm805_driver = {
 	.driver = {
 		.name = "88PM805",
 		.pm = &pm80x_pm_ops,
+		.of_match_table = of_match_ptr(pm805_of_match),
 		},
 	.probe = pm805_probe,
 	.remove = pm805_remove,
