@@ -69,7 +69,7 @@
 #define APBC_TIMER0		0x0034
 #define APBC_TIMER1		0x0038
 #define APBC_SSP2		0x004c
-#define APBC_THERMAL		0x0050
+#define APBC_THERMAL		0x0058
 #define APBC_TWSI1		0x0060
 
 /* APBCP register offsets */
