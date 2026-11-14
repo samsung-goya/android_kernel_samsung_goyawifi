@@ -75,6 +75,13 @@ config BATTERY_88PM860X
 	help
 	  Say Y here to enable battery monitor for Marvell 88PM860x chip.
 
+config BATTERY_88PM822
+	tristate "Marvell 88PM822 software fuel-gauge battery driver"
+	depends on MFD_88PM800
+	help
+	  Say Y here to enable battery monitoring and software fuel-gauge
+	  support for the Marvell 88PM822 PMIC.
+
 config CHARGER_ADP5061
 	tristate "ADP5061 battery charger driver"
 	depends on I2C
@@ -574,6 +581,13 @@ config CHARGER_BQ25890
 	select REGMAP_I2C
 	help
 	  Say Y to enable support for the TI BQ25890 battery charger.
+
+config CHARGER_SMB328
+	tristate "Summit Microelectronics SMB328 Battery Charger"
+	depends on I2C
+	help
+	  Say Y to include support for Summit Microelectronics SMB328
+	  Battery Charger.
 
 config CHARGER_SMB347
 	tristate "Summit Microelectronics SMB347 Battery Charger"

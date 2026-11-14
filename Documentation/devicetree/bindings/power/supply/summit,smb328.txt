@@ -1,0 +1,26 @@
+Summit Microelectronics SMB328 Battery Charger
+
+Required properties:
+- compatible: must be "summit,smb328"
+- reg: I2C slave address (typically 0x34)
+
+Optional properties:
+- extcon: phandle to an extcon provider (e.g. MUIC) for USB/DCP cable detection
+- monitored-battery: phandle to the battery power_supply node
+- enable-gpios: optional charger enable GPIO
+- interrupts: charger status/fault IRQ
+- summit,dcp-input-current-microamp: input current limit for DCP in uA (default 500000)
+- summit,fast-charge-current-microamp: fast-charge current limit for DCP in uA (default 500000)
+- summit,float-voltage-microvolt: float voltage in uV (default 4320000)
+
+Example:
+	charger@34 {
+		compatible = "summit,smb328";
+		reg = <0x34>;
+		extcon = <&muic>;
+		monitored-battery = <&battery>;
+		enable-gpios = <&gpio 98 GPIO_ACTIVE_LOW>;
+		summit,dcp-input-current-microamp = <500000>;
+		summit,fast-charge-current-microamp = <500000>;
+		summit,float-voltage-microvolt = <4320000>;
+	};
