@@ -70,6 +70,7 @@ struct pxa_gpio_bank {
 	unsigned long	irq_mask;
 	unsigned long	irq_edge_rise;
 	unsigned long	irq_edge_fall;
+	unsigned long	irq_wake;
 
 #ifdef CONFIG_PM
 	unsigned long	saved_gplr;
@@ -87,6 +88,7 @@ struct pxa_gpio_chip {
 
 	int irq0;
 	int irq1;
+	int irq_mux;
 	int (*set_wake)(unsigned int gpio, unsigned int on);
 };
 
@@ -517,12 +519,54 @@ static int pxa_gpio_set_wake(struct irq_data *d, unsigned int on)
 {
 	struct pxa_gpio_chip *pchip = irq_data_get_irq_chip_data(d);
 	unsigned int gpio = irqd_to_hwirq(d);
+	struct pxa_gpio_bank *c = &pchip->banks[gpio / 32];
+	unsigned long bit = BIT(gpio % 32);
+	unsigned long flags;
+	int ret = 0;
+
+	spin_lock_irqsave(&gpio_lock, flags);
+	if (on)
+		c->irq_wake |= bit;
+	else
+		c->irq_wake &= ~bit;
+	spin_unlock_irqrestore(&gpio_lock, flags);
+
+	if (pchip->irq_mux > 0) {
+		ret = irq_set_irq_wake(pchip->irq_mux, on);
+		if (ret)
+			return ret;
+	}
 
 	if (pchip->set_wake)
 		return pchip->set_wake(gpio, on);
 	else
 		return 0;
 }
+
+void pxa_gpio_for_each_wake(void (*fn)(unsigned int gpio, bool rise,
+				       bool fall, void *data), void *data)
+{
+	struct pxa_gpio_chip *pchip = pxa_gpio_chip;
+	int i, bit;
+
+	if (!pchip || !fn)
+		return;
+
+	for (i = 0; i <= pxa_last_gpio / 32; i++) {
+		struct pxa_gpio_bank *c = &pchip->banks[i];
+		unsigned long wake = c->irq_wake;
+
+		for_each_set_bit(bit, &wake, 32) {
+			unsigned int gpio = i * 32 + bit;
+
+			if (gpio > pxa_last_gpio)
+				break;
+			fn(gpio, !!(c->irq_edge_rise & BIT(bit)),
+			   !!(c->irq_edge_fall & BIT(bit)), data);
+		}
+	}
+}
+EXPORT_SYMBOL_GPL(pxa_gpio_for_each_wake);
 
 static void pxa_unmask_muxed_gpio(struct irq_data *d)
 {
@@ -541,6 +585,7 @@ static struct irq_chip pxa_muxed_gpio_chip = {
 	.irq_unmask	= pxa_unmask_muxed_gpio,
 	.irq_set_type	= pxa_gpio_irq_type,
 	.irq_set_wake	= pxa_gpio_set_wake,
+	.flags		= IRQCHIP_MASK_ON_SUSPEND,
 };
 
 static int pxa_gpio_nums(struct platform_device *pdev)
@@ -666,6 +711,7 @@ static int pxa_gpio_probe(struct platform_device *pdev)
 
 	pchip->irq0 = irq0;
 	pchip->irq1 = irq1;
+	pchip->irq_mux = irq_mux;
 	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
 	if (!res)
 		return -EINVAL;

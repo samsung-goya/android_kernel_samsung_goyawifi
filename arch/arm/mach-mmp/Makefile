@@ -41,5 +41,8 @@ endif
 ifeq ($(CONFIG_SMP),y)
 obj-$(CONFIG_MACH_PXA988_DT)	+= platsmp-pxa988.o headsmp-pxa988.o
 endif
+ifeq ($(CONFIG_PM),y)
+obj-$(CONFIG_MACH_PXA988_DT)	+= pm-pxa988.o
+endif
 obj-$(CONFIG_MACH_TETON_BGA)	+= teton_bga.o
 obj-$(CONFIG_MACH_GPLUGD)	+= gplugd.o

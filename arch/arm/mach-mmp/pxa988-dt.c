@@ -43,6 +43,13 @@ static void __init pxa988_dt_init_irq(void)
 	writel_relaxed(PXA988_ICU_GBL_IRQ_FIQ_MSK, PXA988_ICU_A9C0_GBL_INT_MSK);
 	writel_relaxed(PXA988_ICU_GBL_IRQ_FIQ_MSK, PXA988_ICU_A9C1_GBL_INT_MSK);
 
+#ifdef CONFIG_SMP
+	/*
+	 * Register PXA988-specific IPI handler before irqchip_init() so GIC
+	 * does not lock in the default handler (set_smp_cross_call is one-shot).
+	 */
+	set_smp_cross_call(pxa988_gic_raise_softirq);
+#endif
 	irqchip_init();
 }
 

@@ -29,6 +29,9 @@
 #define CIU_PHYS_SIZE			0x400
 #define SCU_PHYS_BASE			0xd1dfe000
 #define SCU_PHYS_SIZE			0x100
+#define GIC_DIST_PHYS_BASE		0xd1dff000
+#define GIC_DIST_PHYS_SIZE		SZ_4K
+#define GIC_DIST_SOFTINT		0xf00
 #define CTI_PHYS_BASE(cpu)		(0xd4118000 + 0x1000 * (cpu))
 #define CTI_PHYS_SIZE			SZ_4K
 
@@ -75,10 +78,51 @@
 static void __iomem *scu_base;
 static void __iomem *apmu_base;
 static void __iomem *ciu_base;
+static void __iomem *gic_dist_base;
 static void __iomem *cti_base[2];
 
 static u32 core1_saved_idle_cfg;
 static bool core1_off;
+
+void pxa988_set_reset_handler(unsigned long phys_addr, unsigned int cpu)
+{
+	if (WARN_ON(cpu >= nr_cpu_ids))
+		return;
+
+	pxa988_cpu_reset_vector[cpu] = phys_addr;
+	__cpuc_flush_dcache_area(&pxa988_cpu_reset_vector[cpu],
+				 sizeof(pxa988_cpu_reset_vector[cpu]));
+	outer_clean_range(__pa(&pxa988_cpu_reset_vector[cpu]),
+			  __pa(&pxa988_cpu_reset_vector[cpu] + 1));
+}
+
+void pxa988_gic_raise_softirq(const struct cpumask *mask, unsigned int irq)
+{
+	int cpu;
+	unsigned long map = 0;
+
+	if (unlikely(!gic_dist_base || !apmu_base))
+		return;
+
+	for_each_cpu(cpu, mask)
+		map |= BIT(cpu_logical_map(cpu));
+
+	/*
+	 * Ensure that stores to Normal memory are visible to the other CPUs
+	 * before they observe us issuing the IPI.
+	 */
+	dmb(ishst);
+
+	/* This always happens on GIC0 */
+	writel_relaxed((map << 16) | irq, gic_dist_base + GIC_DIST_SOFTINT);
+
+	/*
+	 * Wake target core(s) from C2 low-power state where GIC IRQ/FIQ
+	 * outputs are globally masked in APMU.
+	 */
+	writel_relaxed(map, apmu_base + APMU_CORE_WAKEUP_CTL +
+		       4 * smp_processor_id());
+}
 
 void pxa988_cti_enable_cpu(unsigned int cpu)
 {
@@ -150,13 +194,22 @@ static void __init pxa988_smp_prepare_cpus(unsigned int max_cpus)
 
 	apmu_base = ioremap(APMU_PHYS_BASE, APMU_PHYS_SIZE);
 	ciu_base = ioremap(CIU_PHYS_BASE, CIU_PHYS_SIZE);
+	gic_dist_base = ioremap(GIC_DIST_PHYS_BASE, GIC_DIST_PHYS_SIZE);
 
-	WARN_ON(!apmu_base || !ciu_base);
+	WARN_ON(!apmu_base || !ciu_base || !gic_dist_base);
 
 	scu_enable(scu_base);
 
 	/* Initialize CoreSight CTI for CPU0 */
 	pxa988_cti_enable_cpu(0);
+
+	/* Route all warm resets through pxa988_cpu_reset_entry */
+	pxa988_set_reset_handler(__pa_symbol(pxa988_cpu_resume_handler), 0);
+	if (ciu_base) {
+		writel_relaxed((u32)__pa_symbol(pxa988_cpu_reset_entry),
+			       ciu_base + CIU_WARM_RESET_VECTOR);
+		readl_relaxed(ciu_base + CIU_WARM_RESET_VECTOR);
+	}
 }
 
 static int pxa988_smp_boot_secondary(unsigned int cpu, struct task_struct *idle)
@@ -178,7 +231,8 @@ static int pxa988_smp_boot_secondary(unsigned int cpu, struct task_struct *idle)
 		smp_wmb();
 	}
 
-	entry = (u32)__pa_symbol(pxa988_secondary_startup);
+	entry = (u32)__pa_symbol(pxa988_cpu_reset_entry);
+	pxa988_set_reset_handler(__pa_symbol(pxa988_secondary_startup), cpu);
 
 	/* No TrustZone hypervisor on goyawifi. Boot ROM reads DDR vector. */
 	writel_relaxed(entry, ciu_base + CIU_WARM_RESET_VECTOR);
@@ -210,6 +264,9 @@ static void pxa988_smp_secondary_init(unsigned int cpu)
 {
 	/* Re-enable CoreSight CTI on secondary core */
 	pxa988_cti_enable_cpu(cpu);
+
+	/* Switch warm reset vector from cold-boot pen to low-power resume */
+	pxa988_set_reset_handler(__pa_symbol(pxa988_cpu_resume_handler), cpu);
 }
 
 #ifdef CONFIG_HOTPLUG_CPU

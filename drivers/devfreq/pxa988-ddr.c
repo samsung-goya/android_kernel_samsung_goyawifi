@@ -204,6 +204,27 @@ static int pxa988_ddr_remove(struct platform_device *pdev)
 	return 0;
 }
 
+static int __maybe_unused pxa988_ddr_suspend(struct device *dev)
+{
+	struct pxa988_ddr_devfreq *priv = dev_get_drvdata(dev);
+
+	return devfreq_suspend_device(priv->devfreq);
+}
+
+static int __maybe_unused pxa988_ddr_resume(struct device *dev)
+{
+	struct pxa988_ddr_devfreq *priv = dev_get_drvdata(dev);
+
+	mutex_lock(&priv->lock);
+	pxa988_ddr_counter_reset(priv);
+	mutex_unlock(&priv->lock);
+
+	return devfreq_resume_device(priv->devfreq);
+}
+
+static SIMPLE_DEV_PM_OPS(pxa988_ddr_pm_ops, pxa988_ddr_suspend,
+			 pxa988_ddr_resume);
+
 static const struct of_device_id pxa988_ddr_of_match[] = {
 	{ .compatible = "marvell,pxa988-ddr" },
 	{ }
@@ -216,6 +237,7 @@ static struct platform_driver pxa988_ddr_driver = {
 	.driver = {
 		.name = "pxa988-ddr-devfreq",
 		.of_match_table = pxa988_ddr_of_match,
+		.pm = &pxa988_ddr_pm_ops,
 	},
 };
 module_platform_driver(pxa988_ddr_driver);

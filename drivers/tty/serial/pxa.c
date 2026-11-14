@@ -49,6 +49,7 @@ struct uart_pxa_port {
 	unsigned char           mcr;
 	unsigned int            lsr_break_flag;
 	struct clk		*clk;
+	bool			pm_clk_enabled;
 	char			name[PXA_NAME_LEN];
 };
 
@@ -553,10 +554,13 @@ serial_pxa_pm(struct uart_port *port, unsigned int state,
 {
 	struct uart_pxa_port *up = (struct uart_pxa_port *)port;
 
-	if (!state)
+	if (!state && !up->pm_clk_enabled) {
 		clk_prepare_enable(up->clk);
-	else
+		up->pm_clk_enabled = true;
+	} else if (state && up->pm_clk_enabled) {
 		clk_disable_unprepare(up->clk);
+		up->pm_clk_enabled = false;
+	}
 }
 
 static void serial_pxa_release_port(struct uart_port *port)
