@@ -553,6 +553,14 @@ static int sdhci_pxav3_runtime_suspend(struct device *dev)
 	struct sdhci_pxa *pxa = sdhci_pltfm_priv(pltfm_host);
 	int ret;
 
+	/*
+	 * On PXA988 all SDH controllers share GIC_SPI 39; when SDIO IRQ is
+	 * enabled, sdhci_irq() reads SDHCI_INT_STATUS even if runtime_suspended,
+	 * which hangs the AXI bus if clk_io/clk_core are gated.
+	 */
+	if (sdhci_sdio_irq_enabled(host))
+		return -EBUSY;
+
 	ret = sdhci_runtime_suspend_host(host);
 	if (ret)
 		return ret;
