@@ -974,6 +974,7 @@ static DEFINE_SPINLOCK(usb_lock);
 static DEFINE_SPINLOCK(disp_lock);
 static DEFINE_SPINLOCK(ccic0_lock);
 static DEFINE_SPINLOCK(gc_lock);
+static DEFINE_SPINLOCK(vpu_lock);
 
 static struct mmp_clk_mix_config sdh0_mix_config = {
 	.reg_info = DEFINE_MIX_REG_INFO(3, 8, 1, 6, 11),
@@ -1001,6 +1002,14 @@ static struct mmp_clk_mix_config gc_mix_config = {
 
 static struct mmp_clk_mix_config gc_axi_mix_config = {
 	.reg_info = DEFINE_MIX_REG_INFO(3, 17, 2, 20, 16),
+};
+
+static struct mmp_clk_mix_config vpu_mix_config = {
+	.reg_info = DEFINE_MIX_REG_INFO(3, 8, 2, 6, 20),
+};
+
+static struct mmp_clk_mix_config vpu_axi_mix_config = {
+	.reg_info = DEFINE_MIX_REG_INFO(3, 13, 2, 11, 21),
 };
 
 static const char * const lcd_parent_names[] = {"pll1_624", "pll1_416"};
@@ -1042,11 +1051,7 @@ static struct mmp_param_gate_clk apmu_gate_clks[] = {
 	{PXA988_CLK_CCIC0, "ccic0_clk", "ccic0_div",
 	 CLK_SET_RATE_PARENT, APMU_CCIC0, 0x8012, 0x8012, 0x2, 0, &ccic0_lock},
 
-	/* Graphics and video engine clocks */
-	{PXA988_CLK_VPU_AXI, "vpu_axi", "axi",
-	 CLK_SET_RATE_PARENT, APMU_VPU, 0x8, 0x8, 0x0, 0, NULL},
-	{PXA988_CLK_VPU, "vpu_clk", "pll1_416",
-	 CLK_SET_RATE_PARENT, APMU_VPU, 0x30, 0x30, 0x0, 0, NULL},
+	/* Graphics engine clocks */
 	{PXA988_CLK_GC_HCLK, "gc_hclk", "axi",
 	 CLK_SET_RATE_PARENT, APMU_GC, 0x20, 0x20, 0x0, 0, &gc_lock},
 	{PXA988_CLK_GC2D, "gc2d_clk", "pll1_416",
@@ -1226,6 +1231,31 @@ static void __init pxa988_axi_periph_clk_init(struct pxa988_clk_unit *pxa_unit)
 				    pxa_unit->apmu_base + APMU_GC,
 				    0x08, 0x08, 0x0, 0, &gc_lock);
 	mmp_clk_add(unit, PXA988_CLK_GC_AXI, clk);
+
+	/* Register VPU (CODA7542) core/AHB and AXI mix clocks and gates */
+	vpu_mix_config.reg_info.reg_clk_ctrl = pxa_unit->apmu_base + APMU_VPU;
+	mmp_clk_register_mix(NULL, "vpu_mix",
+			     (const char **)lcd_axi_parent_names,
+			     ARRAY_SIZE(lcd_axi_parent_names),
+			     CLK_SET_RATE_PARENT,
+			     &vpu_mix_config, &vpu_lock);
+	clk = mmp_clk_register_gate(NULL, "vpu_clk", "vpu_mix",
+				    CLK_SET_RATE_PARENT,
+				    pxa_unit->apmu_base + APMU_VPU,
+				    0x30, 0x30, 0x0, 0, &vpu_lock);
+	mmp_clk_add(unit, PXA988_CLK_VPU, clk);
+
+	vpu_axi_mix_config.reg_info.reg_clk_ctrl = pxa_unit->apmu_base + APMU_VPU;
+	mmp_clk_register_mix(NULL, "vpu_axi_mix",
+			     (const char **)lcd_axi_parent_names,
+			     ARRAY_SIZE(lcd_axi_parent_names),
+			     CLK_SET_RATE_PARENT,
+			     &vpu_axi_mix_config, &vpu_lock);
+	clk = mmp_clk_register_gate(NULL, "vpu_axi", "vpu_axi_mix",
+				    CLK_SET_RATE_PARENT,
+				    pxa_unit->apmu_base + APMU_VPU,
+				    0x08, 0x08, 0x0, 0, &vpu_lock);
+	mmp_clk_add(unit, PXA988_CLK_VPU_AXI, clk);
 
 	/* Configure CCIC0 functional clock to pll1_624 / 2 (312 MHz) and register PHY clock */
 	spin_lock_irqsave(&ccic0_lock, flags);
