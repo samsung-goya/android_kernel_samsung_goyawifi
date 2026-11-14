@@ -2179,7 +2179,8 @@ static void mwifiex_cleanup_sdio(struct mwifiex_adapter *adapter)
 {
 	struct sdio_mmc_card *card = adapter->card;
 
-	cancel_work_sync(&card->work);
+	if (current_work() != &card->work)
+		cancel_work_sync(&card->work);
 
 	kfree(card->mp_regs);
 	kfree(card->mpa_rx.skb_arr);
