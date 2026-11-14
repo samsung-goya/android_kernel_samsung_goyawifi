@@ -350,6 +350,8 @@ const char *coda_product_name(int product)
 		return "CodaHx4";
 	case CODA_7541:
 		return "CODA7541";
+	case CODA_7542:
+		return "CODA7542";
 	case CODA_960:
 		return "CODA960";
 	default:
@@ -1897,7 +1899,8 @@ static void coda_encode_ctrls(struct coda_ctx *ctx)
 		V4L2_MPEG_VIDEO_H264_PROFILE_CONSTRAINED_BASELINE, 0x0,
 		V4L2_MPEG_VIDEO_H264_PROFILE_CONSTRAINED_BASELINE);
 	if (ctx->dev->devtype->product == CODA_HX4 ||
-	    ctx->dev->devtype->product == CODA_7541) {
+	    ctx->dev->devtype->product == CODA_7541 ||
+	    ctx->dev->devtype->product == CODA_7542) {
 		v4l2_ctrl_new_std_menu(&ctx->ctrls, &coda_ctrl_ops,
 			V4L2_CID_MPEG_VIDEO_H264_LEVEL,
 			V4L2_MPEG_VIDEO_H264_LEVEL_3_1,
@@ -1930,6 +1933,7 @@ static void coda_encode_ctrls(struct coda_ctx *ctx)
 		V4L2_MPEG_VIDEO_MPEG4_PROFILE_SIMPLE);
 	if (ctx->dev->devtype->product == CODA_HX4 ||
 	    ctx->dev->devtype->product == CODA_7541 ||
+	    ctx->dev->devtype->product == CODA_7542 ||
 	    ctx->dev->devtype->product == CODA_960) {
 		v4l2_ctrl_new_std_menu(&ctx->ctrls, &coda_ctrl_ops,
 			V4L2_CID_MPEG_VIDEO_MPEG4_LEVEL,
@@ -1988,7 +1992,8 @@ static void coda_decode_ctrls(struct coda_ctx *ctx)
 		ctx->h264_profile_ctrl->flags |= V4L2_CTRL_FLAG_READ_ONLY;
 
 	if (ctx->dev->devtype->product == CODA_HX4 ||
-	    ctx->dev->devtype->product == CODA_7541) {
+	    ctx->dev->devtype->product == CODA_7541 ||
+	    ctx->dev->devtype->product == CODA_7542) {
 		max = V4L2_MPEG_VIDEO_H264_LEVEL_4_0;
 		mask = ~((1 << V4L2_MPEG_VIDEO_H264_LEVEL_2_0) |
 			 (1 << V4L2_MPEG_VIDEO_H264_LEVEL_3_0) |
@@ -2167,6 +2172,7 @@ static int coda_open(struct file *file)
 		/* fallthrough */
 	case CODA_HX4:
 	case CODA_7541:
+	case CODA_7542:
 		ctx->reg_idx = 0;
 		break;
 	default:
@@ -2345,6 +2351,7 @@ static int coda_hw_init(struct coda_dev *dev)
 	/* Tell the BIT where to find everything it needs */
 	if (dev->devtype->product == CODA_960 ||
 	    dev->devtype->product == CODA_7541 ||
+	    dev->devtype->product == CODA_7542 ||
 	    dev->devtype->product == CODA_HX4) {
 		coda_write(dev, dev->tempbuf.paddr,
 				CODA_REG_BIT_TEMP_BUF_ADDR);
@@ -2429,8 +2436,10 @@ static void coda_copy_firmware(struct coda_dev *dev, const u8 * const buf,
 	u32 *src = (u32 *)buf;
 
 	/* Check if the firmware has a 16-byte Freescale header, skip it */
-	if (buf[0] == 'M' && buf[1] == 'X')
+	if (buf[0] == 'M' && buf[1] == 'X') {
 		src += 4;
+		size -= 16;
+	}
 	/*
 	 * Check whether the firmware is in native order or pre-reordered for
 	 * memory access. The first instruction opcode always is 0xe40e.
@@ -2441,10 +2450,10 @@ static void coda_copy_firmware(struct coda_dev *dev, const u8 * const buf,
 
 		/* Firmware in native order, reorder while copying */
 		if (dev->devtype->product == CODA_DX6) {
-			for (i = 0; i < (size - 16) / 4; i++)
+			for (i = 0; i < size / 4; i++)
 				dst[i] = (src[i] << 16) | (src[i] >> 16);
 		} else {
-			for (i = 0; i < (size - 16) / 4; i += 2) {
+			for (i = 0; i < size / 4; i += 2) {
 				dst[i] = (src[i + 1] << 16) | (src[i + 1] >> 16);
 				dst[i + 1] = (src[i] << 16) | (src[i] >> 16);
 			}
@@ -2554,6 +2563,7 @@ enum coda_platform {
 	CODA_IMX53,
 	CODA_IMX6Q,
 	CODA_IMX6DL,
+	CODA_PXA988,
 };
 
 static const struct coda_devtype coda_devdata[] = {
@@ -2631,6 +2641,21 @@ static const struct coda_devtype coda_devdata[] = {
 		.tempbuf_size = 204 * 1024,
 		.iram_size    = 0x1f000, /* leave 4k for suspend code */
 	},
+	[CODA_PXA988] = {
+		.firmware     = {
+			"goya-coda7542-vpu-fw.bin",
+			"vpu/goya-coda7542-vpu-fw.bin",
+			"coda7542.bin"
+		},
+		.product      = CODA_7542,
+		.codecs       = coda7_codecs,
+		.num_codecs   = ARRAY_SIZE(coda7_codecs),
+		.vdevs        = coda7_video_devices,
+		.num_vdevs    = ARRAY_SIZE(coda7_video_devices),
+		.workbuf_size = 128 * 1024,
+		.tempbuf_size = 304 * 1024,
+		.iram_size    = 0x11600,
+	},
 };
 
 static const struct platform_device_id coda_platform_ids[] = {
@@ -2646,6 +2671,7 @@ static const struct of_device_id coda_dt_ids[] = {
 	{ .compatible = "fsl,imx53-vpu", .data = &coda_devdata[CODA_IMX53] },
 	{ .compatible = "fsl,imx6q-vpu", .data = &coda_devdata[CODA_IMX6Q] },
 	{ .compatible = "fsl,imx6dl-vpu", .data = &coda_devdata[CODA_IMX6DL] },
+	{ .compatible = "marvell,pxa988-vpu", .data = &coda_devdata[CODA_PXA988] },
 	{ /* sentinel */ }
 };
 MODULE_DEVICE_TABLE(of, coda_dt_ids);

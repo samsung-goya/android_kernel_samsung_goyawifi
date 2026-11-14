@@ -43,6 +43,7 @@ enum coda_inst_type {
 };
 
 enum coda_product {
+	CODA_7542 = 0x0000,
 	CODA_DX6 = 0xf001,
 	CODA_HX4 = 0xf00a,
 	CODA_7541 = 0xf012,

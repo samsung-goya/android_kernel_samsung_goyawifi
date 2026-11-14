@@ -70,6 +70,7 @@ static void coda_command_async(struct coda_ctx *ctx, int cmd)
 
 	if (dev->devtype->product == CODA_HX4 ||
 	    dev->devtype->product == CODA_7541 ||
+	    dev->devtype->product == CODA_7542 ||
 	    dev->devtype->product == CODA_960) {
 		/* Restore context related registers to CODA */
 		coda_write(dev, ctx->bit_stream_param,
@@ -506,7 +507,8 @@ static int coda_alloc_context_buffers(struct coda_ctx *ctx,
 	}
 
 	if (!ctx->psbuf.vaddr && (dev->devtype->product == CODA_HX4 ||
-				  dev->devtype->product == CODA_7541)) {
+				  dev->devtype->product == CODA_7541 ||
+				  dev->devtype->product == CODA_7542)) {
 		ret = coda_alloc_context_buf(ctx, &ctx->psbuf,
 					     CODA7_PS_BUF_SIZE, "psbuf");
 		if (ret < 0)
@@ -630,6 +632,7 @@ static void coda_setup_iram(struct coda_ctx *ctx)
 		me_bits = CODA7_USE_HOST_ME_ENABLE;
 		break;
 	case CODA_7541:
+	case CODA_7542:
 		dbk_bits = CODA7_USE_HOST_DBK_ENABLE | CODA7_USE_DBK_ENABLE;
 		bit_bits = CODA7_USE_HOST_BIT_ENABLE | CODA7_USE_BIT_ENABLE;
 		ip_bits = CODA7_USE_HOST_IP_ENABLE | CODA7_USE_IP_ENABLE;
@@ -655,7 +658,8 @@ static void coda_setup_iram(struct coda_ctx *ctx)
 
 		/* Prioritize in case IRAM is too small for everything */
 		if (dev->devtype->product == CODA_HX4 ||
-		    dev->devtype->product == CODA_7541) {
+		    dev->devtype->product == CODA_7541 ||
+		    dev->devtype->product == CODA_7542) {
 			iram_info->search_ram_size = round_up(mb_width * 16 *
 							      36 + 2048, 1024);
 			iram_info->search_ram_paddr = coda_iram_alloc(iram_info,
@@ -717,7 +721,8 @@ out:
 			 "IRAM smaller than needed\n");
 
 	if (dev->devtype->product == CODA_HX4 ||
-	    dev->devtype->product == CODA_7541) {
+	    dev->devtype->product == CODA_7541 ||
+	    dev->devtype->product == CODA_7542) {
 		/* TODO - Enabling these causes picture errors on CODA7541 */
 		if (ctx->inst_type == CODA_INST_DECODER) {
 			/* fw 1.4.50 */
@@ -737,6 +742,7 @@ static u32 coda_supported_firmwares[] = {
 	CODA_FIRMWARE_VERNUM(CODA_DX6, 2, 2, 5),
 	CODA_FIRMWARE_VERNUM(CODA_HX4, 1, 4, 50),
 	CODA_FIRMWARE_VERNUM(CODA_7541, 1, 4, 50),
+	CODA_FIRMWARE_VERNUM(CODA_7542, 0, 9, 86),
 	CODA_FIRMWARE_VERNUM(CODA_960, 2, 1, 5),
 	CODA_FIRMWARE_VERNUM(CODA_960, 2, 1, 9),
 	CODA_FIRMWARE_VERNUM(CODA_960, 2, 3, 10),
@@ -929,6 +935,7 @@ static int coda_start_encoding(struct coda_ctx *ctx)
 		/* fallthrough */
 	case CODA_HX4:
 	case CODA_7541:
+	case CODA_7542:
 		coda_write(dev, CODA7_STREAM_BUF_DYNALLOC_EN |
 			CODA7_STREAM_BUF_PIC_RESET, CODA_REG_BIT_STREAM_CTRL);
 		break;
@@ -959,6 +966,7 @@ static int coda_start_encoding(struct coda_ctx *ctx)
 		break;
 	case CODA_HX4:
 	case CODA_7541:
+	case CODA_7542:
 		if (dst_fourcc == V4L2_PIX_FMT_H264) {
 			value = (round_up(q_data_src->rect.width, 16) &
 				 CODA7_PICWIDTH_MASK) << CODA7_PICWIDTH_OFFSET;
@@ -1126,6 +1134,7 @@ static int coda_start_encoding(struct coda_ctx *ctx)
 			break;
 		case CODA_HX4:
 		case CODA_7541:
+		case CODA_7542:
 			coda_write(dev, ctx->iram_info.search_ram_paddr,
 					CODA7_CMD_ENC_SEQ_SEARCH_BASE);
 			coda_write(dev, ctx->iram_info.search_ram_size,
@@ -1171,7 +1180,8 @@ static int coda_start_encoding(struct coda_ctx *ctx)
 	coda_write(dev, stride, CODA_CMD_SET_FRAME_BUF_STRIDE);
 
 	if (dev->devtype->product == CODA_HX4 ||
-	    dev->devtype->product == CODA_7541) {
+	    dev->devtype->product == CODA_7541 ||
+	    dev->devtype->product == CODA_7542) {
 		coda_write(dev, q_data_src->bytesperline,
 				CODA7_CMD_SET_FRAME_SOURCE_BUF_STRIDE);
 	}
@@ -1632,6 +1642,7 @@ static bool coda_reorder_enable(struct coda_ctx *ctx)
 
 	if (dev->devtype->product != CODA_HX4 &&
 	    dev->devtype->product != CODA_7541 &&
+	    dev->devtype->product != CODA_7542 &&
 	    dev->devtype->product != CODA_960)
 		return false;
 
@@ -1711,7 +1722,8 @@ static int __coda_start_decoding(struct coda_ctx *ctx)
 	}
 	if (src_fourcc == V4L2_PIX_FMT_H264) {
 		if (dev->devtype->product == CODA_HX4 ||
-		    dev->devtype->product == CODA_7541) {
+		    dev->devtype->product == CODA_7541 ||
+		    dev->devtype->product == CODA_7542) {
 			coda_write(dev, ctx->psbuf.paddr,
 					CODA_CMD_DEC_SEQ_PS_BB_START);
 			coda_write(dev, (CODA7_PS_BUF_SIZE / 1024),
@@ -1842,7 +1854,8 @@ static int __coda_start_decoding(struct coda_ctx *ctx)
 	}
 
 	if (dev->devtype->product == CODA_HX4 ||
-	    dev->devtype->product == CODA_7541) {
+	    dev->devtype->product == CODA_7541 ||
+	    dev->devtype->product == CODA_7542) {
 		int max_mb_x = 1920 / 16;
 		int max_mb_y = 1088 / 16;
 		int max_mb_num = max_mb_x * max_mb_y;
@@ -1962,6 +1975,7 @@ static int coda_prepare_decode(struct coda_ctx *ctx)
 		/* TBD */
 	case CODA_HX4:
 	case CODA_7541:
+	case CODA_7542:
 		coda_write(dev, CODA_PRE_SCAN_EN, CODA_CMD_DEC_PIC_OPTION);
 		break;
 	case CODA_960:
