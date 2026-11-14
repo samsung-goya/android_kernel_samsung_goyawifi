@@ -26,6 +26,7 @@
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-event.h>
+#include <media/v4l2-fwnode.h>
 #include <media/i2c/ov7670.h>
 #include <media/videobuf2-vmalloc.h>
 #include <media/videobuf2-dma-contig.h>
@@ -100,6 +101,13 @@ static struct mcam_format_struct {
 	bool planar;
 	u32 mbus_code;
 } mcam_formats[] = {
+	{
+		.desc		= "UYVY 4:2:2",
+		.pixelformat	= V4L2_PIX_FMT_UYVY,
+		.mbus_code	= MEDIA_BUS_FMT_UYVY8_2X8,
+		.bpp		= 2,
+		.planar		= false,
+	},
 	{
 		.desc		= "YUYV 4:2:2",
 		.pixelformat	= V4L2_PIX_FMT_YUYV,
@@ -733,6 +741,7 @@ static void mcam_ctlr_image(struct mcam_camera *cam)
 	imgsz_w = (fmt->width * 2) & IMGSZ_H_MASK;
 
 	switch (fmt->pixelformat) {
+	case V4L2_PIX_FMT_UYVY:
 	case V4L2_PIX_FMT_YUYV:
 	case V4L2_PIX_FMT_YVYU:
 		widthy = fmt->width * 2;
@@ -763,6 +772,7 @@ static void mcam_ctlr_image(struct mcam_camera *cam)
 		mcam_reg_write_mask(cam, REG_CTRL0,
 			C0_DF_YUV | C0_YUV_420PL | C0_YUVE_VYUY, C0_DF_MASK);
 		break;
+	case V4L2_PIX_FMT_UYVY:
 	case V4L2_PIX_FMT_YUYV:
 		mcam_reg_write_mask(cam, REG_CTRL0,
 			C0_DF_YUV | C0_YUV_PACKED | C0_YUVE_NOSWAP, C0_DF_MASK);
@@ -810,8 +820,6 @@ static int mcam_ctlr_configure(struct mcam_camera *cam)
 	unsigned long flags;
 
 	spin_lock_irqsave(&cam->dev_lock, flags);
-	clear_bit(CF_SG_RESTART, &cam->flags);
-	cam->dma_setup(cam);
 	mcam_ctlr_image(cam);
 	mcam_set_config_needed(cam, 0);
 	spin_unlock_irqrestore(&cam->dev_lock, flags);
@@ -865,6 +873,7 @@ static void mcam_ctlr_init(struct mcam_camera *cam)
 static void mcam_ctlr_stop_dma(struct mcam_camera *cam)
 {
 	unsigned long flags;
+	unsigned int i;
 
 	/*
 	 * Theory: stop the camera controller (whether it is operating
@@ -873,7 +882,9 @@ static void mcam_ctlr_stop_dma(struct mcam_camera *cam)
 	 */
 	spin_lock_irqsave(&cam->dev_lock, flags);
 	clear_bit(CF_SG_RESTART, &cam->flags);
-	mcam_ctlr_stop(cam);
+	/* Finish the in-flight CSI frame before clearing ENABLE. */
+	if (!cam->csi_quirks || !test_bit(CF_DMA_ACTIVE, &cam->flags))
+		mcam_ctlr_stop(cam);
 	cam->state = S_IDLE;
 	spin_unlock_irqrestore(&cam->dev_lock, flags);
 	/*
@@ -883,11 +894,18 @@ static void mcam_ctlr_stop_dma(struct mcam_camera *cam)
 	 * sometimes (on mmp) get a frame at the end WITHOUT the
 	 * start-of-frame indication.
 	 */
-	msleep(150);
+	if (cam->csi_quirks) {
+		for (i = 0; i < 50 && test_bit(CF_DMA_ACTIVE, &cam->flags); i++)
+			msleep(10);
+	} else {
+		msleep(150);
+	}
 	if (test_bit(CF_DMA_ACTIVE, &cam->flags))
 		cam_err(cam, "Timeout waiting for DMA to end\n");
 		/* This would be bad news - what now? */
 	spin_lock_irqsave(&cam->dev_lock, flags);
+	if (cam->csi_quirks)
+		mcam_ctlr_stop(cam);
 	mcam_ctlr_irq_disable(cam);
 	spin_unlock_irqrestore(&cam->dev_lock, flags);
 }
@@ -900,12 +918,10 @@ static int mcam_ctlr_power_up(struct mcam_camera *cam)
 	unsigned long flags;
 	int ret;
 
-	spin_lock_irqsave(&cam->dev_lock, flags);
 	ret = cam->plat_power_up(cam);
-	if (ret) {
-		spin_unlock_irqrestore(&cam->dev_lock, flags);
+	if (ret)
 		return ret;
-	}
+	spin_lock_irqsave(&cam->dev_lock, flags);
 	mcam_reg_clear_bit(cam, REG_CTRL1, C1_PWRDWN);
 	spin_unlock_irqrestore(&cam->dev_lock, flags);
 	msleep(5); /* Just to be sure */
@@ -923,8 +939,8 @@ static void mcam_ctlr_power_down(struct mcam_camera *cam)
 	 * power down routine.
 	 */
 	mcam_reg_set_bit(cam, REG_CTRL1, C1_PWRDWN);
-	cam->plat_power_down(cam);
 	spin_unlock_irqrestore(&cam->dev_lock, flags);
+	cam->plat_power_down(cam);
 }
 
 /* -------------------------------------------------------------------- */
@@ -1016,7 +1032,14 @@ static int mcam_read_setup(struct mcam_camera *cam)
 	 */
 	spin_lock_irqsave(&cam->dev_lock, flags);
 	clear_bit(CF_DMA_ACTIVE, &cam->flags);
+	clear_bit(CF_SG_RESTART, &cam->flags);
 	mcam_reset_buffers(cam);
+	/*
+	 * STREAMOFF returns all DMA buffers, even if the format is retained.
+	 * Every new stream must program its newly queued buffers before DMA
+	 * starts; image configuration alone is not a stream lifetime boundary.
+	 */
+	cam->dma_setup(cam);
 	/*
 	 * Update CSI2_DPHY value
 	 */
@@ -1033,6 +1056,13 @@ static int mcam_read_setup(struct mcam_camera *cam)
 	if (!test_bit(CF_SG_RESTART, &cam->flags))
 		mcam_ctlr_start(cam);
 	spin_unlock_irqrestore(&cam->dev_lock, flags);
+	if (cam->csi_quirks) {
+		ret = sensor_call(cam, video, s_stream, 1);
+		if (ret) {
+			mcam_ctlr_stop_dma(cam);
+			return ret;
+		}
+	}
 	return 0;
 }
 
@@ -1096,6 +1126,14 @@ static void mcam_vb_requeue_bufs(struct vb2_queue *vq,
 		buf = cam->vb_bufs[i];
 
 		if (buf) {
+			/* Return a shared contiguous underrun buffer only once. */
+			if (cam->csi_quirks && cam->buffer_mode == B_DMA_contig) {
+				unsigned int j;
+
+				for (j = i + 1; j < MAX_DMA_BUFS; j++)
+					if (cam->vb_bufs[j] == buf)
+						cam->vb_bufs[j] = NULL;
+			}
 			vb2_buffer_done(&buf->vb_buf.vb2_buf, state);
 			cam->vb_bufs[i] = NULL;
 		}
@@ -1160,6 +1198,14 @@ static void mcam_vb_stop_streaming(struct vb2_queue *vq)
 	if (cam->state != S_STREAMING)
 		return;
 	mcam_ctlr_stop_dma(cam);
+	if (cam->csi_quirks) {
+		unsigned long flags;
+
+		sensor_call(cam, video, s_stream, 0);
+		spin_lock_irqsave(&cam->dev_lock, flags);
+		mcam_disable_mipi(cam);
+		spin_unlock_irqrestore(&cam->dev_lock, flags);
+	}
 	/*
 	 * Reset the CCIC PHY after stopping streaming,
 	 * otherwise, the CCIC may be unstable.
@@ -1317,6 +1363,16 @@ static int mcam_vidioc_querycap(struct file *file, void *priv,
 static int mcam_vidioc_enum_fmt_vid_cap(struct file *filp,
 		void *priv, struct v4l2_fmtdesc *fmt)
 {
+	struct mcam_camera *cam = video_drvdata(filp);
+
+	if (cam->csi_quirks) {
+		if (fmt->index)
+			return -EINVAL;
+		strlcpy(fmt->description, mcam_formats[0].desc,
+			sizeof(fmt->description));
+		fmt->pixelformat = V4L2_PIX_FMT_UYVY;
+		return 0;
+	}
 	if (fmt->index >= N_MCAM_FMTS)
 		return -EINVAL;
 	strlcpy(fmt->description, mcam_formats[fmt->index].desc,
@@ -1337,6 +1393,8 @@ static int mcam_vidioc_try_fmt_vid_cap(struct file *filp, void *priv,
 	};
 	int ret;
 
+	if (cam->csi_quirks)
+		pix->pixelformat = V4L2_PIX_FMT_UYVY;
 	f = mcam_find_format(pix->pixelformat);
 	pix->pixelformat = f->pixelformat;
 	v4l2_fill_mbus_format(&format.format, pix, f->mbus_code);
@@ -1352,7 +1410,7 @@ static int mcam_vidioc_try_fmt_vid_cap(struct file *filp, void *priv,
 		pix->sizeimage = pix->height * pix->bytesperline;
 		break;
 	}
-	pix->colorspace = V4L2_COLORSPACE_SRGB;
+	pix->colorspace = cam->csi_quirks ? V4L2_COLORSPACE_JPEG : V4L2_COLORSPACE_SRGB;
 	return ret;
 }
 
@@ -1596,6 +1654,12 @@ static int mcam_v4l_open(struct file *filp)
 		ret = mcam_ctlr_power_up(cam);
 		if (ret)
 			goto out;
+		ret = sensor_call(cam, core, s_power, 1);
+		if (ret && ret != -ENOIOCTLCMD) {
+			mcam_ctlr_power_down(cam);
+			goto out;
+		}
+		ret = 0;
 		__mcam_cam_reset(cam);
 		mcam_set_config_needed(cam, 1);
 	}
@@ -1617,6 +1681,7 @@ static int mcam_v4l_release(struct file *filp)
 	_vb2_fop_release(filp, NULL);
 	if (last_open) {
 		mcam_disable_mipi(cam);
+		sensor_call(cam, core, s_power, 0);
 		mcam_ctlr_power_down(cam);
 		if (cam->buffer_mode == B_vmalloc && alloc_bufs_at_read)
 			mcam_free_dma_bufs(cam);
@@ -1681,8 +1746,16 @@ static void mcam_frame_complete(struct mcam_camera *cam, int frame)
 int mccic_irq(struct mcam_camera *cam, unsigned int irqs)
 {
 	unsigned int frame, handled = 0;
+	bool frame_started = false;
 
 	mcam_reg_write(cam, REG_IRQSTAT, FRAMEIRQS); /* Clear'em all */
+	/* Final EOF may arrive without a matching SOF after disabling CCIC. */
+	if (cam->csi_quirks && cam->state == S_IDLE &&
+	    (irqs & (IRQ_EOF0 | IRQ_EOF1 | IRQ_EOF2))) {
+		mcam_ctlr_stop(cam);
+		clear_bit(CF_DMA_ACTIVE, &cam->flags);
+		handled = IRQ_HANDLED;
+	}
 	/*
 	 * Handle any frame completions.  There really should
 	 * not be more than one of these, or we have fallen
@@ -1708,13 +1781,15 @@ int mccic_irq(struct mcam_camera *cam, unsigned int irqs)
 	 * at once; may want to rethink that.
 	 */
 	for (frame = 0; frame < cam->nbufs; frame++) {
-		if (irqs & (IRQ_SOF0 << frame)) {
+		if ((irqs & (IRQ_SOF0 << frame)) &&
+		    (!cam->csi_quirks || cam->state != S_IDLE)) {
+			frame_started = true;
 			set_bit(CF_FRAME_SOF0 + frame, &cam->flags);
 			handled = IRQ_HANDLED;
 		}
 	}
 
-	if (handled == IRQ_HANDLED) {
+	if (handled == IRQ_HANDLED && (!cam->csi_quirks || frame_started)) {
 		set_bit(CF_DMA_ACTIVE, &cam->flags);
 		if (cam->buffer_mode == B_DMA_sg)
 			mcam_ctlr_stop(cam);
@@ -1736,6 +1811,73 @@ static struct ov7670_config sensor_cfg = {
 	.min_height = 240,
 };
 
+
+static int mccic_notify_bound(struct v4l2_async_notifier *notifier,
+			      struct v4l2_subdev *subdev,
+			      struct v4l2_async_subdev *asd)
+{
+	struct mcam_camera *cam = container_of(notifier, struct mcam_camera, notifier);
+
+	cam->sensor = subdev;
+	return 0;
+}
+
+static void mccic_notify_unbind(struct v4l2_async_notifier *notifier,
+				struct v4l2_subdev *subdev,
+				struct v4l2_async_subdev *asd)
+{
+	struct mcam_camera *cam = container_of(notifier, struct mcam_camera, notifier);
+
+	if (video_is_registered(&cam->vdev))
+		video_unregister_device(&cam->vdev);
+	cam->sensor = NULL;
+}
+
+static int mccic_notify_complete(struct v4l2_async_notifier *notifier)
+{
+	struct mcam_camera *cam = container_of(notifier, struct mcam_camera, notifier);
+	int ret;
+
+	ret = mcam_cam_init(cam);
+	if (ret)
+		return ret;
+
+	ret = mcam_setup_vb2(cam);
+	if (ret)
+		return ret;
+
+	mutex_lock(&cam->s_mutex);
+	cam->vdev = mcam_v4l_template;
+	cam->vdev.v4l2_dev = &cam->v4l2_dev;
+	cam->vdev.lock = &cam->s_mutex;
+	cam->vdev.queue = &cam->vb_queue;
+	video_set_drvdata(&cam->vdev, cam);
+	ret = video_register_device(&cam->vdev, VFL_TYPE_GRABBER, -1);
+	if (ret) {
+		mutex_unlock(&cam->s_mutex);
+		return ret;
+	}
+
+	if (cam->buffer_mode == B_vmalloc && !alloc_bufs_at_read) {
+		if (mcam_alloc_dma_bufs(cam, 1))
+			cam_warn(cam, "Unable to alloc DMA buffers at load will try again later.");
+	}
+	mutex_unlock(&cam->s_mutex);
+	return v4l2_device_register_subdev_nodes(&cam->v4l2_dev);
+}
+
+static const struct v4l2_async_notifier_operations mccic_notify_ops = {
+	.bound = mccic_notify_bound,
+	.unbind = mccic_notify_unbind,
+	.complete = mccic_notify_complete,
+};
+
+static int mccic_parse_endpoint(struct device *dev,
+				struct v4l2_fwnode_endpoint *vep,
+				struct v4l2_async_subdev *asd)
+{
+	return 0;
+}
 
 int mccic_register(struct mcam_camera *cam)
 {
@@ -1773,6 +1915,10 @@ int mccic_register(struct mcam_camera *cam)
 	mcam_set_config_needed(cam, 1);
 	cam->pix_format = mcam_def_pix_format;
 	cam->mbus_code = mcam_def_mbus_code;
+	if (cam->csi_quirks) {
+		cam->pix_format.pixelformat = V4L2_PIX_FMT_UYVY;
+		cam->mbus_code = MEDIA_BUS_FMT_UYVY8_2X8;
+	}
 	mcam_ctlr_init(cam);
 
 	/*
@@ -1782,6 +1928,19 @@ int mccic_register(struct mcam_camera *cam)
 	if (ret)
 		goto out_unregister;
 	cam->v4l2_dev.ctrl_handler = &cam->ctrl_handler;
+
+	if (cam->dev->of_node) {
+		ret = v4l2_async_notifier_parse_fwnode_endpoints(
+			cam->dev, &cam->notifier,
+			sizeof(struct v4l2_async_subdev), mccic_parse_endpoint);
+		if (ret)
+			goto out_cleanup_notifier;
+		cam->notifier.ops = &mccic_notify_ops;
+		ret = v4l2_async_notifier_register(&cam->v4l2_dev, &cam->notifier);
+		if (ret)
+			goto out_cleanup_notifier;
+		return 0;
+	}
 
 	/*
 	 * Try to find the sensor.
@@ -1827,6 +1986,8 @@ int mccic_register(struct mcam_camera *cam)
 	mutex_unlock(&cam->s_mutex);
 	return 0;
 
+out_cleanup_notifier:
+	v4l2_async_notifier_cleanup(&cam->notifier);
 out_unregister:
 	v4l2_ctrl_handler_free(&cam->ctrl_handler);
 	v4l2_device_unregister(&cam->v4l2_dev);
@@ -1848,7 +2009,12 @@ void mccic_shutdown(struct mcam_camera *cam)
 	}
 	if (cam->buffer_mode == B_vmalloc)
 		mcam_free_dma_bufs(cam);
-	video_unregister_device(&cam->vdev);
+	if (cam->dev->of_node) {
+		v4l2_async_notifier_unregister(&cam->notifier);
+		v4l2_async_notifier_cleanup(&cam->notifier);
+	} else {
+		video_unregister_device(&cam->vdev);
+	}
 	v4l2_ctrl_handler_free(&cam->ctrl_handler);
 	v4l2_device_unregister(&cam->v4l2_dev);
 }
@@ -1898,6 +2064,18 @@ int mccic_resume(struct mcam_camera *cam)
 		 */
 		if (cam->buffer_mode == B_DMA_sg && cam->vb_bufs[0])
 			list_add(&cam->vb_bufs[0]->queue, &cam->buffers);
+		/* Restore CCIC-owned contiguous buffers after sleep. */
+		if (cam->csi_quirks && cam->buffer_mode == B_DMA_contig) {
+			unsigned int i;
+
+			for (i = 0; i < 2; i++) {
+				struct mcam_vb_buffer *b = cam->vb_bufs[i];
+
+				if (b && list_empty(&b->queue))
+					list_add_tail(&b->queue, &cam->buffers);
+				cam->vb_bufs[i] = NULL;
+			}
+		}
 		ret = mcam_read_setup(cam);
 	}
 	return ret;

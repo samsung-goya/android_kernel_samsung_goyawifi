@@ -27,6 +27,8 @@
 #include <linux/list.h>
 #include <linux/pm.h>
 #include <linux/clk.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 
 #include "mcam-core.h"
 
@@ -35,6 +37,8 @@ MODULE_AUTHOR("Jonathan Corbet <corbet@lwn.net>");
 MODULE_LICENSE("GPL");
 
 static char *mcam_clks[] = {"CCICAXICLK", "CCICFUNCLK", "CCICPHYCLK"};
+static char *mcam_of_clks[] = {"axi", "func", "phy"};
+static int pxa988_dphy[] = {0x0b05, 0x11, 0x0900};
 
 struct mmp_camera {
 	void __iomem *power_regs;
@@ -42,6 +46,7 @@ struct mmp_camera {
 	struct mcam_camera mcam;
 	struct list_head devlist;
 	struct clk *mipi_clk;
+	struct clk *hclk;
 	int irq;
 };
 
@@ -142,6 +147,16 @@ static int mmpcam_power_up(struct mcam_camera *mcam)
 	struct mmp_camera *cam = mcam_to_cam(mcam);
 	struct mmp_camera_platform_data *pdata;
 
+	if (cam->pdev->dev.of_node) {
+		if (!IS_ERR_OR_NULL(cam->hclk))
+			clk_prepare_enable(cam->hclk);
+		mcam_clk_enable(mcam);
+		mcam_reg_write(mcam, REG_CLKCTRL,
+			       (mcam->mclk_src << 29) | mcam->mclk_div);
+		mcam_reg_clear_bit(mcam, REG_CTRL1, C1_PWRDWN);
+		return 0;
+	}
+
 /*
  * Turn on power and clocks to the controller.
  */
@@ -168,6 +183,14 @@ static void mmpcam_power_down(struct mcam_camera *mcam)
 {
 	struct mmp_camera *cam = mcam_to_cam(mcam);
 	struct mmp_camera_platform_data *pdata;
+
+	if (cam->pdev->dev.of_node) {
+		mcam_clk_disable(mcam);
+		if (!IS_ERR_OR_NULL(cam->hclk))
+			clk_disable_unprepare(cam->hclk);
+		return;
+	}
+
 /*
  * Turn off clocks and set reset lines
  */
@@ -187,6 +210,9 @@ static void mcam_ctlr_reset(struct mcam_camera *mcam)
 {
 	unsigned long val;
 	struct mmp_camera *cam = mcam_to_cam(mcam);
+
+	if (!cam->power_regs)
+		return;
 
 	if (mcam->ccic_id) {
 		/*
@@ -314,21 +340,66 @@ static irqreturn_t mmpcam_irq(int irq, void *data)
 	return IRQ_RETVAL(handled);
 }
 
-static void mcam_init_clk(struct mcam_camera *mcam)
+static int mclk_prepare(struct clk_hw *hw)
 {
+	struct mcam_camera *mcam = container_of(hw, struct mcam_camera, mclk_hw);
+
+	return mmpcam_power_up(mcam);
+}
+
+static void mclk_unprepare(struct clk_hw *hw)
+{
+	struct mcam_camera *mcam = container_of(hw, struct mcam_camera, mclk_hw);
+
+	mmpcam_power_down(mcam);
+}
+
+static unsigned long mclk_recalc_rate(struct clk_hw *hw,
+				      unsigned long parent_rate)
+{
+	struct mcam_camera *mcam = container_of(hw, struct mcam_camera, mclk_hw);
+
+	if (mcam->bus_type == V4L2_MBUS_CSI2 && mcam->mclk_div == 13)
+		return 24000000;
+	return 48000000;
+}
+
+static const struct clk_ops mclk_ops = {
+	.prepare = mclk_prepare,
+	.unprepare = mclk_unprepare,
+	.recalc_rate = mclk_recalc_rate,
+};
+
+static int mcam_init_clk(struct mcam_camera *mcam)
+{
+	struct mmp_camera *cam = mcam_to_cam(mcam);
+	const char **names = mcam->dev->of_node ?
+		(const char **)mcam_of_clks : (const char **)mcam_clks;
 	unsigned int i;
 
 	for (i = 0; i < NR_MCAM_CLK; i++) {
-		if (mcam_clks[i] != NULL) {
+		if (names[i] != NULL) {
 			/* Some clks are not necessary on some boards
 			 * We still try to run even it fails getting clk
 			 */
-			mcam->clk[i] = devm_clk_get(mcam->dev, mcam_clks[i]);
-			if (IS_ERR(mcam->clk[i]))
+			mcam->clk[i] = devm_clk_get(mcam->dev, names[i]);
+			if (IS_ERR(mcam->clk[i])) {
+				if (PTR_ERR(mcam->clk[i]) == -EPROBE_DEFER)
+					return -EPROBE_DEFER;
 				dev_warn(mcam->dev, "Could not get clk: %s\n",
-						mcam_clks[i]);
+						names[i]);
+			}
 		}
 	}
+	if (mcam->dev->of_node) {
+		cam->hclk = devm_clk_get(mcam->dev, "hclk");
+		if (IS_ERR(cam->hclk)) {
+			if (PTR_ERR(cam->hclk) == -EPROBE_DEFER)
+				return -EPROBE_DEFER;
+			cam->hclk = NULL;
+		}
+	}
+	return 0;
 }
 
 static int mmpcam_probe(struct platform_device *pdev)
@@ -337,10 +408,11 @@ static int mmpcam_probe(struct platform_device *pdev)
 	struct mcam_camera *mcam;
 	struct resource *res;
 	struct mmp_camera_platform_data *pdata;
+	bool has_of = !!pdev->dev.of_node;
 	int ret;
 
 	pdata = pdev->dev.platform_data;
-	if (!pdata)
+	if (!pdata && !has_of)
 		return -ENODEV;
 
 	cam = devm_kzalloc(&pdev->dev, sizeof(*cam), GFP_KERNEL);
@@ -353,24 +425,34 @@ static int mmpcam_probe(struct platform_device *pdev)
 	mcam->plat_power_up = mmpcam_power_up;
 	mcam->plat_power_down = mmpcam_power_down;
 	mcam->ctlr_reset = mcam_ctlr_reset;
-	mcam->calc_dphy = mmpcam_calc_dphy;
+	mcam->calc_dphy = has_of ? NULL : mmpcam_calc_dphy;
 	mcam->dev = &pdev->dev;
 	mcam->use_smbus = 0;
-	mcam->ccic_id = pdev->id;
-	mcam->mclk_min = pdata->mclk_min;
-	mcam->mclk_src = pdata->mclk_src;
-	mcam->mclk_div = pdata->mclk_div;
-	mcam->bus_type = pdata->bus_type;
-	mcam->dphy = pdata->dphy;
-	if (mcam->bus_type == V4L2_MBUS_CSI2) {
-		cam->mipi_clk = devm_clk_get(mcam->dev, "mipi");
-		if ((IS_ERR(cam->mipi_clk) && mcam->dphy[2] == 0))
-			return PTR_ERR(cam->mipi_clk);
+	mcam->ccic_id = has_of ? 0 : pdev->id;
+	if (has_of) {
+		mcam->bus_type = V4L2_MBUS_CSI2;
+		mcam->mclk_src = 3;
+		mcam->mclk_div = 13;
+		mcam->dphy = pxa988_dphy;
+		mcam->lane = 1;
+		mcam->csi_quirks = true;
+		mcam->buffer_mode = B_DMA_contig;
+	} else {
+		mcam->mclk_min = pdata->mclk_min;
+		mcam->mclk_src = pdata->mclk_src;
+		mcam->mclk_div = pdata->mclk_div;
+		mcam->bus_type = pdata->bus_type;
+		mcam->dphy = pdata->dphy;
+		if (mcam->bus_type == V4L2_MBUS_CSI2) {
+			cam->mipi_clk = devm_clk_get(mcam->dev, "mipi");
+			if ((IS_ERR(cam->mipi_clk) && mcam->dphy[2] == 0))
+				return PTR_ERR(cam->mipi_clk);
+		}
+		mcam->lane = pdata->lane;
+		mcam->buffer_mode = B_DMA_sg;
 	}
 	mcam->mipi_enabled = false;
-	mcam->lane = pdata->lane;
 	mcam->chip_id = MCAM_ARMADA610;
-	mcam->buffer_mode = B_DMA_sg;
 	strlcpy(mcam->bus_info, "platform:mmp-camera", sizeof(mcam->bus_info));
 	spin_lock_init(&mcam->dev_lock);
 	/*
@@ -381,51 +463,75 @@ static int mmpcam_probe(struct platform_device *pdev)
 	if (IS_ERR(mcam->regs))
 		return PTR_ERR(mcam->regs);
 	mcam->regs_size = resource_size(res);
-	/*
-	 * Power/clock memory is elsewhere; get it too.  Perhaps this
-	 * should really be managed outside of this driver?
-	 */
-	res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
-	cam->power_regs = devm_ioremap_resource(&pdev->dev, res);
-	if (IS_ERR(cam->power_regs))
-		return PTR_ERR(cam->power_regs);
-	/*
-	 * Find the i2c adapter.  This assumes, of course, that the
-	 * i2c bus is already up and functioning.
-	 */
-	mcam->i2c_adapter = platform_get_drvdata(pdata->i2c_device);
-	if (mcam->i2c_adapter == NULL) {
-		dev_err(&pdev->dev, "No i2c adapter\n");
-		return -ENODEV;
-	}
-	/*
-	 * Sensor GPIO pins.
-	 */
-	ret = devm_gpio_request(&pdev->dev, pdata->sensor_power_gpio,
-							"cam-power");
-	if (ret) {
-		dev_err(&pdev->dev, "Can't get sensor power gpio %d",
-				pdata->sensor_power_gpio);
-		return ret;
-	}
-	gpio_direction_output(pdata->sensor_power_gpio, 0);
-	ret = devm_gpio_request(&pdev->dev, pdata->sensor_reset_gpio,
-							"cam-reset");
-	if (ret) {
-		dev_err(&pdev->dev, "Can't get sensor reset gpio %d",
-				pdata->sensor_reset_gpio);
-		return ret;
-	}
-	gpio_direction_output(pdata->sensor_reset_gpio, 0);
 
-	mcam_init_clk(mcam);
+	if (!has_of) {
+		/*
+		 * Power/clock memory is elsewhere; get it too.  Perhaps this
+		 * should really be managed outside of this driver?
+		 */
+		res = platform_get_resource(pdev, IORESOURCE_MEM, 1);
+		cam->power_regs = devm_ioremap_resource(&pdev->dev, res);
+		if (IS_ERR(cam->power_regs))
+			return PTR_ERR(cam->power_regs);
+		/*
+		 * Find the i2c adapter.  This assumes, of course, that the
+		 * i2c bus is already up and functioning.
+		 */
+		mcam->i2c_adapter = platform_get_drvdata(pdata->i2c_device);
+		if (mcam->i2c_adapter == NULL) {
+			dev_err(&pdev->dev, "No i2c adapter\n");
+			return -ENODEV;
+		}
+		/*
+		 * Sensor GPIO pins.
+		 */
+		ret = devm_gpio_request(&pdev->dev, pdata->sensor_power_gpio,
+								"cam-power");
+		if (ret) {
+			dev_err(&pdev->dev, "Can't get sensor power gpio %d",
+					pdata->sensor_power_gpio);
+			return ret;
+		}
+		gpio_direction_output(pdata->sensor_power_gpio, 0);
+		ret = devm_gpio_request(&pdev->dev, pdata->sensor_reset_gpio,
+								"cam-reset");
+		if (ret) {
+			dev_err(&pdev->dev, "Can't get sensor reset gpio %d",
+					pdata->sensor_reset_gpio);
+			return ret;
+		}
+		gpio_direction_output(pdata->sensor_reset_gpio, 0);
+	}
+
+	ret = mcam_init_clk(mcam);
+	if (ret)
+		return ret;
+
+	if (has_of && of_property_read_bool(pdev->dev.of_node, "#clock-cells")) {
+		struct clk_init_data init = {};
+		const char *clk_name = "mcam-mclk";
+
+		of_property_read_string(pdev->dev.of_node, "clock-output-names",
+					&clk_name);
+		init.name = clk_name;
+		init.ops = &mclk_ops;
+		mcam->mclk_hw.init = &init;
+		ret = devm_clk_hw_register(&pdev->dev, &mcam->mclk_hw);
+		if (ret)
+			return ret;
+		ret = of_clk_add_hw_provider(pdev->dev.of_node,
+					     of_clk_hw_simple_get,
+					     &mcam->mclk_hw);
+		if (ret)
+			return ret;
+	}
 
 	/*
 	 * Power the device up and hand it off to the core.
 	 */
 	ret = mmpcam_power_up(mcam);
 	if (ret)
-		return ret;
+		goto out_del_clk;
 	ret = mccic_register(mcam);
 	if (ret)
 		goto out_power_down;
@@ -443,6 +549,8 @@ static int mmpcam_probe(struct platform_device *pdev)
 					"mmp-camera", mcam);
 	if (ret == 0) {
 		mmpcam_add_device(cam);
+		if (has_of)
+			mmpcam_power_down(mcam);
 		return 0;
 	}
 
@@ -450,6 +558,9 @@ out_unregister:
 	mccic_shutdown(mcam);
 out_power_down:
 	mmpcam_power_down(mcam);
+out_del_clk:
+	if (has_of && of_property_read_bool(pdev->dev.of_node, "#clock-cells"))
+		of_clk_del_provider(pdev->dev.of_node);
 	return ret;
 }
 
@@ -458,6 +569,9 @@ static int mmpcam_remove(struct mmp_camera *cam)
 {
 	struct mcam_camera *mcam = &cam->mcam;
 
+	if (cam->pdev->dev.of_node &&
+	    of_property_read_bool(cam->pdev->dev.of_node, "#clock-cells"))
+		of_clk_del_provider(cam->pdev->dev.of_node);
 	mmpcam_remove_device(cam);
 	mccic_shutdown(mcam);
 	mmpcam_power_down(mcam);
@@ -497,12 +611,20 @@ static int mmpcam_resume(struct platform_device *pdev)
 	 * touch a register even if nothing was active before; trust
 	 * me, it's better this way.
 	 */
-	mmpcam_power_up_ctlr(cam);
+	if (!cam->pdev->dev.of_node)
+		mmpcam_power_up_ctlr(cam);
 	return mccic_resume(&cam->mcam);
 }
 
 #endif
 
+
+static const struct of_device_id mmpcam_of_match[] = {
+	{ .compatible = "marvell,pxa988-ccic" },
+	{ .compatible = "marvell,mmp2-ccic" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, mmpcam_of_match);
 
 static struct platform_driver mmpcam_driver = {
 	.probe		= mmpcam_probe,
@@ -513,6 +635,7 @@ static struct platform_driver mmpcam_driver = {
 #endif
 	.driver = {
 		.name	= "mmp-camera",
+		.of_match_table = of_match_ptr(mmpcam_of_match),
 	}
 };
 

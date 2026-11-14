@@ -1,0 +1,38 @@
+Marvell MMP2 / PXA988 Camera Controller (CCIC)
+
+Required properties:
+- compatible: Should be one of:
+  - "marvell,mmp2-ccic"
+  - "marvell,pxa988-ccic"
+- reg: Register base address and length.
+- interrupts: CCIC interrupt specifier.
+- clocks: List of clock specifiers matching clock-names.
+- clock-names: "axi", "func", "phy", and optionally "hclk" (shared LCD/CCIC AHB clock).
+
+Optional properties:
+- #clock-cells: Should be <0> if the CCIC provides MCLK to the camera sensor.
+- clock-output-names: Name of the sensor MCLK output clock.
+- port: OF graph port node containing an endpoint linked to the sensor.
+
+Example:
+	ccic: camera@d420a000 {
+		compatible = "marvell,pxa988-ccic", "marvell,mmp2-ccic";
+		reg = <0xd420a000 0x1000>;
+		interrupts = <GIC_SPI 42 IRQ_TYPE_LEVEL_HIGH>;
+		clocks = <&soc_clocks PXA988_CLK_CCIC_AXI>,
+			 <&soc_clocks PXA988_CLK_CCIC0>,
+			 <&soc_clocks PXA988_CLK_CCIC0_PHY>,
+			 <&soc_clocks PXA988_CLK_LCD_HCLK>;
+		clock-names = "axi", "func", "phy", "hclk";
+		#clock-cells = <0>;
+		clock-output-names = "cam-mclk";
+
+		port {
+			ccic_in: endpoint {
+				remote-endpoint = <&sensor_out>;
+				bus-type = <4>;
+				clock-lanes = <0>;
+				data-lanes = <1>;
+			};
+		};
+	};

@@ -8,6 +8,8 @@
 #define _MCAM_CORE_H
 
 #include <linux/list.h>
+#include <linux/clk-provider.h>
+#include <media/v4l2-async.h>
 #include <media/v4l2-common.h>
 #include <media/v4l2-ctrls.h>
 #include <media/v4l2-dev.h>
@@ -108,6 +110,7 @@ struct mcam_camera {
 	spinlock_t dev_lock;
 	struct device *dev; /* For messages, dma alloc */
 	enum mcam_chip_id chip_id;
+	bool csi_quirks;
 	short int clock_speed;	/* Sensor clock speed, default 30 */
 	short int use_smbus;	/* SMBUS or straight I2c? */
 	enum mcam_buffer_mode buffer_mode;
@@ -130,6 +133,8 @@ struct mcam_camera {
 
 	/* clock tree support */
 	struct clk *clk[NR_MCAM_CLK];
+	struct clk_hw mclk_hw;
+	struct v4l2_async_notifier notifier;
 
 	/*
 	 * Callbacks from the core to the platform code.
