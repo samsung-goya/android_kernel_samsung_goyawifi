@@ -547,34 +547,6 @@
 			power-supplies = <&charger>;
 		};
 	};
-
-	thermal-zones {
-		cpu_thermal: cpu-thermal {
-			polling-delay-passive = <1000>;
-			polling-delay = <5000>;
-			thermal-sensors = <&thermal>;
-
-			trips {
-				cpu_alert0: trip-point0 {
-					temperature = <85000>;
-					hysteresis = <2000>;
-					type = "passive";
-				};
-
-				cpu_alert1: trip-point1 {
-					temperature = <95000>;
-					hysteresis = <2000>;
-					type = "passive";
-				};
-
-				cpu_crit: trip-point2 {
-					temperature = <110000>;
-					hysteresis = <2000>;
-					type = "critical";
-				};
-			};
-		};
-	};
 };
 
 /* ChipIdea USB 2.0 Device Controller */
@@ -647,4 +619,34 @@
 
 &thermal {
 	status = "okay";
+};
+
+/ {
+	thermal-zones {
+		cpu_thermal: cpu-thermal {
+			polling-delay-passive = <1000>;
+			polling-delay = <5000>;
+			thermal-sensors = <&thermal>;
+
+			trips {
+				cpu_alert0: trip-point0 {
+					temperature = <85000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu_alert1: trip-point1 {
+					temperature = <95000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu_crit: trip-point2 {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+		};
+	};
 };

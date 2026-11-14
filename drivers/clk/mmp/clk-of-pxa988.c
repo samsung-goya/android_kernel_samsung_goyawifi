@@ -412,7 +412,7 @@ static struct mmp_param_gate_clk apbc_gate_clks[] = {
 	{PXA988_CLK_PWM3, "pwm3_clk", "pll1_48",
 	 CLK_SET_RATE_PARENT, APBC_PWM3, 0x3, 0x3, 0x0, 0, &reset_lock},
 	{PXA988_CLK_THERMAL, "thermal_clk", "vctcxo",
-	 CLK_SET_RATE_PARENT, APBC_THERMAL, 0x3, 0x3, 0x0, 0, &reset_lock},
+	 CLK_SET_RATE_PARENT, APBC_THERMAL, 0x7, 0x3, 0x4, 0, &reset_lock},
 	{PXA988_CLK_IPC, "ipc_clk", "vctcxo",
 	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APBC_IPC, 0x3, 0x3, 0x0, 0, &reset_lock},
 

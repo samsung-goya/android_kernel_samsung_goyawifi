@@ -119,7 +119,9 @@ static int pxa988_thermal_probe(struct platform_device *pdev)
 	writel(ctrl, t->regs + TS_CTRL);
 
 	msleep(2000);
-	writel(ctrl | TS_CTRL_RST_N | TS_CTRL_TEMP_ON, t->regs + TS_CTRL);
+	ctrl |= TS_CTRL_RST_N;
+	writel(ctrl, t->regs + TS_CTRL);
+	writel(ctrl | TS_CTRL_TEMP_ON, t->regs + TS_CTRL);
 
 	tz = devm_thermal_zone_of_sensor_register(dev, 0, t,
 						  &pxa988_thermal_ops);
