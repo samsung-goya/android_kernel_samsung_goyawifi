@@ -37,6 +37,7 @@
 #include <linux/tty_flip.h>
 #include <linux/serial_core.h>
 #include <linux/clk.h>
+#include <linux/clk-provider.h>
 #include <linux/io.h>
 #include <linux/slab.h>
 
@@ -558,7 +559,10 @@ serial_pxa_pm(struct uart_port *port, unsigned int state,
 		clk_prepare_enable(up->clk);
 		up->pm_clk_enabled = true;
 	} else if (state && up->pm_clk_enabled) {
-		clk_disable_unprepare(up->clk);
+		if (__clk_is_enabled(up->clk))
+			clk_disable_unprepare(up->clk);
+		else
+			clk_unprepare(up->clk);
 		up->pm_clk_enabled = false;
 	}
 }

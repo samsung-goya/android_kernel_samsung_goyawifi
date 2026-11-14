@@ -37,23 +37,12 @@ static struct cpuidle_driver pxa988_idle_driver = {
 		.name			= "C2",
 		.desc			= "Core power down, L1 off",
 	},
-	.states[2]		= {
-		.enter			= pxa988_cpuidle_enter,
-		.exit_latency		= 300,
-		.target_residency	= 800,
-		.flags			= CPUIDLE_FLAG_TIMER_STOP,
-		.name			= "D1P",
-		.desc			= "AP idle, AXI gated, L2 ret",
-	},
-	.states[3]		= {
-		.enter			= pxa988_cpuidle_enter,
-		.exit_latency		= 600,
-		.target_residency	= 1500,
-		.flags			= CPUIDLE_FLAG_TIMER_STOP,
-		.name			= "D1",
-		.desc			= "Sys sleep, DDR SR, L2 ret",
-	},
-	.state_count = 4,
+	/*
+	 * D1P/D1 shut down AXI/APB/DDR without peripheral pm_qos busy guards,
+	 * which can stall active i2c-pxa / sdhci-pxav3 transfers mid-flight.
+	 * Keep cpuidle at C1/C2 and reserve full SoC power-down for D2_UDR.
+	 */
+	.state_count = 2,
 };
 
 static int pxa988_cpuidle_probe(struct platform_device *pdev)
