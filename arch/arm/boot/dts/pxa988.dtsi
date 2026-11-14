@@ -207,6 +207,20 @@
 				status = "disabled";
 			};
 
+			ccic: camera@d420a000 {
+				compatible = "marvell,pxa988-ccic", "marvell,mmp2-ccic";
+				reg = <0xd420a000 0x1000>;
+				interrupts = <GIC_SPI 42 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_CCIC_AXI>,
+					 <&soc_clocks PXA988_CLK_CCIC0>,
+					 <&soc_clocks PXA988_CLK_CCIC0_PHY>,
+					 <&soc_clocks PXA988_CLK_LCD_HCLK>;
+				clock-names = "axi", "func", "phy", "hclk";
+				#clock-cells = <0>;
+				clock-output-names = "cam-mclk";
+				status = "disabled";
+			};
+
 			lcd: lcd-controller@d420b000 {
 				compatible = "marvell,pxa988-lcd";
 				reg = <0xd420b000 0x300>;

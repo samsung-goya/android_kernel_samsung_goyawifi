@@ -91,6 +91,16 @@
 		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
 	};
 
+	camera_pins: camera-pins {
+		pinctrl-single,pins = <
+			GPIO77 AF1	/* CAM_MCLK */
+			GPIO14 AF0	/* CAM_2M_STBY */
+			GPIO15 AF0	/* CAM_2M_RST */
+			GPIO79 AF0	/* CAM_IO_EN (1.8V) */
+			GPIO80 AF0	/* CAM_AVDD_EN (2.8V) */
+		>;
+	};
+
 	twsi1_pins: twsi1-pins {
 		pinctrl-single,pins = <
 			GPIO87 AF5	/* TSP/Bridge CI2C2_SCL */

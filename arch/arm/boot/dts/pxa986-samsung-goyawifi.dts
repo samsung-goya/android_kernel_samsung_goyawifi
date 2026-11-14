@@ -175,7 +175,28 @@
 		#size-cells = <0>;
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2c_camera_pins>;
-		status = "disabled";
+		status = "okay";
+
+		sensor@20 {
+			compatible = "siliconfile,sr200pc20m";
+			reg = <0x20>;
+			clocks = <&ccic>;
+			io-enable-gpios = <&gpio 79 GPIO_ACTIVE_HIGH>;
+			analog-enable-gpios = <&gpio 80 GPIO_ACTIVE_HIGH>;
+			standby-gpios = <&gpio 14 GPIO_ACTIVE_HIGH>;
+			reset-gpios = <&gpio 15 GPIO_ACTIVE_LOW>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&camera_pins>;
+
+			port {
+				sensor_out: endpoint {
+					remote-endpoint = <&ccic_in>;
+					bus-type = <4>;
+					clock-lanes = <0>;
+					data-lanes = <1>;
+				};
+			};
+		};
 	};
 
 	sensor_i2c: i2c-sensor {
@@ -643,6 +664,19 @@
 			dsi_out_vx5b3d: endpoint {
 				remote-endpoint = <&vx5b3d_in_dsi>;
 			};
+		};
+	};
+};
+
+&ccic {
+	status = "okay";
+
+	port {
+		ccic_in: endpoint {
+			remote-endpoint = <&sensor_out>;
+			bus-type = <4>;
+			clock-lanes = <0>;
+			data-lanes = <1>;
 		};
 	};
 };
