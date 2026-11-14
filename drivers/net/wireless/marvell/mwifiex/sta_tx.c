@@ -48,6 +48,7 @@ void *mwifiex_process_sta_txpd(struct mwifiex_private *priv,
 	struct txpd *local_tx_pd;
 	struct mwifiex_txinfo *tx_info = MWIFIEX_SKB_TXCB(skb);
 	unsigned int pad;
+	unsigned int pd_len = mwifiex_txpd_len(adapter);
 	u16 pkt_type, pkt_offset;
 	int hroom = adapter->intf_hdr_len;
 
@@ -62,24 +63,26 @@ void *mwifiex_process_sta_txpd(struct mwifiex_private *priv,
 
 	pkt_type = mwifiex_is_skb_mgmt_frame(skb) ? PKT_TYPE_MGMT : 0;
 
-	pad = ((void *)skb->data - (sizeof(*local_tx_pd) + hroom)-
+	pad = ((void *)skb->data - (pd_len + hroom) -
 			 NULL) & (MWIFIEX_DMA_ALIGN_SZ - 1);
-	skb_push(skb, sizeof(*local_tx_pd) + pad);
+	if (adapter->sd8777_legacy_txpd)
+		pad = (4 - ((uintptr_t)skb->data & 3)) % 4;
+	skb_push(skb, pd_len + pad);
 
 	local_tx_pd = (struct txpd *) skb->data;
-	memset(local_tx_pd, 0, sizeof(struct txpd));
+	memset(local_tx_pd, 0, pd_len);
 	local_tx_pd->bss_num = priv->bss_num;
 	local_tx_pd->bss_type = priv->bss_type;
 	local_tx_pd->tx_pkt_length = cpu_to_le16((u16)(skb->len -
-						       (sizeof(struct txpd) +
-							pad)));
+						       (pd_len + pad)));
 
 	local_tx_pd->priority = (u8) skb->priority;
 	local_tx_pd->pkt_delay_2ms =
 				mwifiex_wmm_compute_drv_pkt_delay(priv, skb);
 
-	if (tx_info->flags & MWIFIEX_BUF_FLAG_EAPOL_TX_STATUS ||
-	    tx_info->flags & MWIFIEX_BUF_FLAG_ACTION_TX_STATUS) {
+	if (!adapter->sd8777_legacy_txpd &&
+	    (tx_info->flags & MWIFIEX_BUF_FLAG_EAPOL_TX_STATUS ||
+	     tx_info->flags & MWIFIEX_BUF_FLAG_ACTION_TX_STATUS)) {
 		local_tx_pd->tx_token_id = tx_info->ack_frame_id;
 		local_tx_pd->flags |= MWIFIEX_TXPD_FLAGS_REQ_TX_STATUS;
 	}
@@ -106,7 +109,7 @@ void *mwifiex_process_sta_txpd(struct mwifiex_private *priv,
 		local_tx_pd->flags |= MWIFIEX_TXPD_FLAGS_TDLS_PACKET;
 
 	/* Offset of actual data */
-	pkt_offset = sizeof(struct txpd) + pad;
+	pkt_offset = pd_len + pad;
 	if (pkt_type == PKT_TYPE_MGMT) {
 		/* Set the packet type and add header for management frame */
 		local_tx_pd->tx_pkt_type = cpu_to_le16(pkt_type);
@@ -139,6 +142,7 @@ int mwifiex_send_null_packet(struct mwifiex_private *priv, u8 flags)
 /* sizeof(struct txpd) + Interface specific header */
 #define NULL_PACKET_HDR 64
 	u32 data_len = NULL_PACKET_HDR;
+	u32 pd_len = mwifiex_txpd_len(adapter);
 	struct sk_buff *skb;
 	int ret;
 	struct mwifiex_txinfo *tx_info = NULL;
@@ -165,15 +169,17 @@ int mwifiex_send_null_packet(struct mwifiex_private *priv, u8 flags)
 	tx_info->bss_num = priv->bss_num;
 	tx_info->bss_type = priv->bss_type;
 	tx_info->pkt_len = data_len -
-			(sizeof(struct txpd) + adapter->intf_hdr_len);
-	skb_reserve(skb, sizeof(struct txpd) + adapter->intf_hdr_len);
-	skb_push(skb, sizeof(struct txpd));
+			(pd_len + adapter->intf_hdr_len);
+	skb_reserve(skb, pd_len + adapter->intf_hdr_len);
+	skb_push(skb, pd_len);
 
 	local_tx_pd = (struct txpd *) skb->data;
+	if (adapter->sd8777_legacy_txpd)
+		memset(local_tx_pd, 0, pd_len);
 	local_tx_pd->tx_control = cpu_to_le32(priv->pkt_tx_ctrl);
 	local_tx_pd->flags = flags;
 	local_tx_pd->priority = WMM_HIGHEST_PRIORITY;
-	local_tx_pd->tx_pkt_offset = cpu_to_le16(sizeof(struct txpd));
+	local_tx_pd->tx_pkt_offset = cpu_to_le16(pd_len);
 	local_tx_pd->bss_num = priv->bss_num;
 	local_tx_pd->bss_type = priv->bss_type;
 

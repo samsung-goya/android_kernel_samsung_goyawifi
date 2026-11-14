@@ -100,6 +100,14 @@ u8 mwifiex_get_chan_type(struct mwifiex_private *priv)
 	struct mwifiex_channel_band channel_band;
 	int ret;
 
+	/*
+	 * SD8777 firmware rejects STA_CONFIGURE (0x23f) and can stop
+	 * responding to it during shared-radio traffic. Preserve the existing
+	 * HT20 error fallback without issuing an unsupported firmware command.
+	 */
+	if (priv->adapter->sd8777_legacy_txpd)
+		return NL80211_CHAN_HT20;
+
 	ret = mwifiex_get_chan_info(priv, &channel_band);
 
 	if (!ret) {
@@ -251,7 +259,8 @@ mwifiex_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	mwifiex_form_mgmt_frame(skb, buf, len);
 	*cookie = prandom_u32() | 1;
 
-	if (ieee80211_is_action(mgmt->frame_control))
+	if (!priv->adapter->sd8777_legacy_txpd &&
+	    ieee80211_is_action(mgmt->frame_control))
 		skb = mwifiex_clone_skb_for_tx_status(priv,
 						      skb,
 				MWIFIEX_BUF_FLAG_ACTION_TX_STATUS, cookie);

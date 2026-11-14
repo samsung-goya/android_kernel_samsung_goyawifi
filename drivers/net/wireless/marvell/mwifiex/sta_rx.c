@@ -203,6 +203,7 @@ int mwifiex_process_sta_rx_packet(struct mwifiex_private *priv,
 	struct rxpd *local_rx_pd;
 	struct rx_packet_hdr *rx_pkt_hdr;
 	u8 ta[ETH_ALEN];
+	u8 rx_flags;
 	u16 rx_pkt_type, rx_pkt_offset, rx_pkt_length, seq_num;
 	struct mwifiex_sta_node *sta_ptr;
 
@@ -232,13 +233,15 @@ int mwifiex_process_sta_rx_packet(struct mwifiex_private *priv,
 		return ret;
 	}
 
+	rx_flags = mwifiex_rxpd_flags(adapter, local_rx_pd);
+
 	/*
 	 * If the packet is not an unicast packet then send the packet
 	 * directly to os. Don't pass thru rx reordering
 	 */
 	if ((!IS_11N_ENABLED(priv) &&
 	     !(ISSUPP_TDLS_ENABLED(priv->adapter->fw_cap_info) &&
-	       !(local_rx_pd->flags & MWIFIEX_RXPD_FLAGS_TDLS_PACKET))) ||
+	       !(rx_flags & MWIFIEX_RXPD_FLAGS_TDLS_PACKET))) ||
 	    !ether_addr_equal_unaligned(priv->curr_addr, rx_pkt_hdr->eth803_hdr.h_dest)) {
 		mwifiex_process_rx_packet(priv, skb);
 		return ret;
@@ -246,9 +249,9 @@ int mwifiex_process_sta_rx_packet(struct mwifiex_private *priv,
 
 	if (mwifiex_queuing_ra_based(priv) ||
 	    (ISSUPP_TDLS_ENABLED(priv->adapter->fw_cap_info) &&
-	     local_rx_pd->flags & MWIFIEX_RXPD_FLAGS_TDLS_PACKET)) {
+	     rx_flags & MWIFIEX_RXPD_FLAGS_TDLS_PACKET)) {
 		memcpy(ta, rx_pkt_hdr->eth803_hdr.h_source, ETH_ALEN);
-		if (local_rx_pd->flags & MWIFIEX_RXPD_FLAGS_TDLS_PACKET &&
+		if (rx_flags & MWIFIEX_RXPD_FLAGS_TDLS_PACKET &&
 		    local_rx_pd->priority < MAX_NUM_TID) {
 			sta_ptr = mwifiex_get_sta_entry(priv, ta);
 			if (sta_ptr)

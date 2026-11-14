@@ -1272,7 +1272,7 @@ mwifiex_send_single_packet(struct mwifiex_private *priv,
 	spin_unlock_irqrestore(&priv->wmm.ra_list_spinlock, ra_list_flags);
 
 	tx_param.next_pkt_len = ((skb_next) ? skb_next->len +
-				sizeof(struct txpd) : 0);
+				mwifiex_txpd_len(adapter) : 0);
 
 	if (mwifiex_process_tx(priv, skb, &tx_param) == -EBUSY) {
 		/* Queue the packet back at the head */
@@ -1366,7 +1366,7 @@ mwifiex_send_processed_packet(struct mwifiex_private *priv,
 
 	tx_param.next_pkt_len =
 		((skb_next) ? skb_next->len +
-		 sizeof(struct txpd) : 0);
+		 mwifiex_txpd_len(adapter) : 0);
 	if (adapter->iface_type == MWIFIEX_USB) {
 		ret = adapter->if_ops.host_to_card(adapter, priv->usb_port,
 						   skb, &tx_param);

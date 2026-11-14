@@ -101,11 +101,12 @@ mwifiex_11n_form_amsdu_txpd(struct mwifiex_private *priv,
 {
 	struct txpd *local_tx_pd;
 	struct mwifiex_txinfo *tx_info = MWIFIEX_SKB_TXCB(skb);
+	u16 pd_len = mwifiex_txpd_len(priv->adapter);
 
-	skb_push(skb, sizeof(*local_tx_pd));
+	skb_push(skb, pd_len);
 
 	local_tx_pd = (struct txpd *) skb->data;
-	memset(local_tx_pd, 0, sizeof(struct txpd));
+	memset(local_tx_pd, 0, pd_len);
 
 	/* Original priority has been overwritten */
 	local_tx_pd->priority = (u8) skb->priority;
@@ -114,10 +115,9 @@ mwifiex_11n_form_amsdu_txpd(struct mwifiex_private *priv,
 	local_tx_pd->bss_num = priv->bss_num;
 	local_tx_pd->bss_type = priv->bss_type;
 	/* Always zero as the data is followed by struct txpd */
-	local_tx_pd->tx_pkt_offset = cpu_to_le16(sizeof(struct txpd));
+	local_tx_pd->tx_pkt_offset = cpu_to_le16(pd_len);
 	local_tx_pd->tx_pkt_type = cpu_to_le16(PKT_TYPE_AMSDU);
-	local_tx_pd->tx_pkt_length = cpu_to_le16(skb->len -
-						 sizeof(*local_tx_pd));
+	local_tx_pd->tx_pkt_length = cpu_to_le16(skb->len - pd_len);
 
 	if (tx_info->flags & MWIFIEX_BUF_FLAG_TDLS_PKT)
 		local_tx_pd->flags |= MWIFIEX_TXPD_FLAGS_TDLS_PACKET;
@@ -159,6 +159,7 @@ mwifiex_11n_aggregate_pkt(struct mwifiex_private *priv,
 			  __releases(&priv->wmm.ra_list_spinlock)
 {
 	struct mwifiex_adapter *adapter = priv->adapter;
+	u16 pd_len = mwifiex_txpd_len(adapter);
 	struct sk_buff *skb_aggr, *skb_src;
 	struct mwifiex_txinfo *tx_info_aggr, *tx_info_src;
 	int pad = 0, aggr_num = 0, ret;
@@ -185,7 +186,7 @@ mwifiex_11n_aggregate_pkt(struct mwifiex_private *priv,
 	/* skb_aggr->data already 64 byte align, just reserve bus interface
 	 * header and txpd.
 	 */
-	skb_reserve(skb_aggr, headroom + sizeof(struct txpd));
+	skb_reserve(skb_aggr, headroom + pd_len);
 	tx_info_aggr =  MWIFIEX_SKB_TXCB(skb_aggr);
 
 	memset(tx_info_aggr, 0, sizeof(*tx_info_aggr));
@@ -251,7 +252,7 @@ mwifiex_11n_aggregate_pkt(struct mwifiex_private *priv,
 	}
 
 	if (skb_src)
-		tx_param.next_pkt_len = skb_src->len + sizeof(struct txpd);
+		tx_param.next_pkt_len = skb_src->len + pd_len;
 	else
 		tx_param.next_pkt_len = 0;
 

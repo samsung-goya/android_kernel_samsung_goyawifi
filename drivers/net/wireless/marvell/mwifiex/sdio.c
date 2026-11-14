@@ -58,6 +58,7 @@ static struct memory_type_mapping mem_type_mapping_tbl[] = {
 };
 
 static const struct of_device_id mwifiex_sdio_of_match_table[] = {
+	{ .compatible = "marvell,sd8777" },
 	{ .compatible = "marvell,sd8787" },
 	{ .compatible = "marvell,sd8897" },
 	{ .compatible = "marvell,sd8997" },
@@ -122,6 +123,8 @@ mwifiex_sdio_probe(struct sdio_func *func, const struct sdio_device_id *id)
 		card->fw_dump_enh = data->fw_dump_enh;
 		card->can_auto_tdls = data->can_auto_tdls;
 		card->can_ext_scan = data->can_ext_scan;
+		card->legacy_txpd = data->legacy_txpd;
+		card->disable_mp_aggr = data->disable_mp_aggr;
 		INIT_WORK(&card->work, mwifiex_sdio_work);
 	}
 
@@ -496,6 +499,8 @@ static void mwifiex_sdio_coredump(struct device *dev)
 
 /* WLAN IDs */
 static const struct sdio_device_id mwifiex_ids[] = {
+	{SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8777_WLAN),
+		.driver_data = (unsigned long)&mwifiex_sdio_sd8777},
 	{SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8786),
 		.driver_data = (unsigned long) &mwifiex_sdio_sd8786},
 	{SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8787),
@@ -2025,6 +2030,7 @@ static int mwifiex_register_dev(struct mwifiex_adapter *adapter)
 
 	/* save adapter pointer in card */
 	card->adapter = adapter;
+	adapter->sd8777_legacy_txpd = card->legacy_txpd;
 	adapter->tx_buf_size = card->tx_buf_size;
 
 	sdio_claim_host(func);
@@ -2093,14 +2099,14 @@ static int mwifiex_init_sdio(struct mwifiex_adapter *adapter)
 	card->mpa_tx.pkt_cnt = 0;
 	card->mpa_tx.start_port = 0;
 
-	card->mpa_tx.enabled = 1;
+	card->mpa_tx.enabled = !card->disable_mp_aggr;
 	card->mpa_tx.pkt_aggr_limit = card->mp_agg_pkt_limit;
 
 	card->mpa_rx.buf_len = 0;
 	card->mpa_rx.pkt_cnt = 0;
 	card->mpa_rx.start_port = 0;
 
-	card->mpa_rx.enabled = 1;
+	card->mpa_rx.enabled = !card->disable_mp_aggr;
 	card->mpa_rx.pkt_aggr_limit = card->mp_agg_pkt_limit;
 
 	/* Allocate buffers for SDIO MP-A */
@@ -2679,6 +2685,7 @@ static void mwifiex_sdio_up_dev(struct mwifiex_adapter *adapter)
 	/* tx_buf_size might be changed to 3584 by firmware during
 	 * data transfer, we will reset to default size.
 	 */
+	adapter->sd8777_legacy_txpd = card->legacy_txpd;
 	adapter->tx_buf_size = card->tx_buf_size;
 
 	/* Read the host_int_status_reg for ACK the first interrupt got
@@ -2724,6 +2731,7 @@ MODULE_AUTHOR("Marvell International Ltd.");
 MODULE_DESCRIPTION("Marvell WiFi-Ex SDIO Driver version " SDIO_VERSION);
 MODULE_VERSION(SDIO_VERSION);
 MODULE_LICENSE("GPL v2");
+MODULE_FIRMWARE(SD8777_DEFAULT_FW_NAME);
 MODULE_FIRMWARE(SD8786_DEFAULT_FW_NAME);
 MODULE_FIRMWARE(SD8787_DEFAULT_FW_NAME);
 MODULE_FIRMWARE(SD8797_DEFAULT_FW_NAME);

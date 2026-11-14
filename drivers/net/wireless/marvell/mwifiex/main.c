@@ -914,7 +914,8 @@ mwifiex_hard_start_xmit(struct sk_buff *skb, struct net_device *dev)
 
 	multicast = is_multicast_ether_addr(skb->data);
 
-	if (unlikely(!multicast && skb->sk &&
+	if (unlikely(!priv->adapter->sd8777_legacy_txpd &&
+		     !multicast && skb->sk &&
 		     skb_shinfo(skb)->tx_flags & SKBTX_WIFI_STATUS &&
 		     priv->adapter->fw_api_ver == MWIFIEX_FW_V15))
 		skb = mwifiex_clone_skb_for_tx_status(priv,

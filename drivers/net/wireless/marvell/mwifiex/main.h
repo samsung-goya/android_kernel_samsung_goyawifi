@@ -1052,7 +1052,28 @@ struct mwifiex_adapter {
 	void *devdump_data;
 	int devdump_len;
 	struct timer_list devdump_timer;
+	/* SD8777 firmware uses the original 16-byte TxPD/RxPD and 4-byte align */
+	bool sd8777_legacy_txpd;
 };
+
+/*
+ * The SD8777 firmware wire descriptor predates the TX-status extension.
+ * Keep every ordinary, null and aggregated TX path on the same wire size.
+ */
+static inline u16 mwifiex_txpd_len(const struct mwifiex_adapter *adapter)
+{
+	return sizeof(struct txpd) - (adapter->sd8777_legacy_txpd ? 4 : 0);
+}
+
+/*
+ * SD8777 has a 16-byte RxPD, without the later trailing flags byte.
+ * Never interpret an Ethernet payload byte as TDLS metadata.
+ */
+static inline u8 mwifiex_rxpd_flags(const struct mwifiex_adapter *adapter,
+				  const struct rxpd *pd)
+{
+	return adapter->sd8777_legacy_txpd ? 0 : pd->flags;
+}
 
 void mwifiex_process_tx_queue(struct mwifiex_adapter *adapter);
 

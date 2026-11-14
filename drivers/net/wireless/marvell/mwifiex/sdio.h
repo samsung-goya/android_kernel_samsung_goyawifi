@@ -30,6 +30,7 @@
 
 #include "main.h"
 
+#define SD8777_DEFAULT_FW_NAME "mrvl/sd8777_uapsta.bin"
 #define SD8786_DEFAULT_FW_NAME "mrvl/sd8786_uapsta.bin"
 #define SD8787_DEFAULT_FW_NAME "mrvl/sd8787_uapsta.bin"
 #define SD8797_DEFAULT_FW_NAME "mrvl/sd8797_uapsta.bin"
@@ -264,6 +265,8 @@ struct sdio_mmc_card {
 	bool fw_dump_enh;
 	bool can_auto_tdls;
 	bool can_ext_scan;
+	bool legacy_txpd;
+	bool disable_mp_aggr;
 
 	struct mwifiex_sdio_mpa_tx mpa_tx;
 	struct mwifiex_sdio_mpa_rx mpa_rx;
@@ -286,6 +289,8 @@ struct mwifiex_sdio_device {
 	bool fw_dump_enh;
 	bool can_auto_tdls;
 	bool can_ext_scan;
+	bool legacy_txpd;
+	bool disable_mp_aggr;
 };
 
 static const struct mwifiex_sdio_card_reg mwifiex_reg_sd87xx = {
@@ -470,6 +475,31 @@ static const struct mwifiex_sdio_card_reg mwifiex_reg_sd8887 = {
 	.func1_spec_reg_table = {0x08, 0x58, 0x5C, 0x5D, 0x60,
 				 0x61, 0x62, 0x64, 0x65, 0x66,
 				 0x68, 0x69, 0x6a},
+};
+
+static const struct mwifiex_sdio_device mwifiex_sdio_sd8777 = {
+	.firmware = SD8777_DEFAULT_FW_NAME,
+	.reg = &mwifiex_reg_sd87xx,
+	.max_ports = 16,
+	.mp_agg_pkt_limit = 8,
+	.tx_buf_size = MWIFIEX_TX_DATA_BUF_SIZE_2K,
+	.mp_tx_agg_buf_size = MWIFIEX_MP_AGGR_BUF_SIZE_16K,
+	.mp_rx_agg_buf_size = MWIFIEX_MP_AGGR_BUF_SIZE_16K,
+	.supports_sdio_new_mode = false,
+	.has_control_mask = true,
+	.can_dump_fw = false,
+	.can_auto_tdls = false,
+	/*
+	 * Use the legacy scan protocol used by the SM-T110 vendor driver;
+	 * extended scan (0x107) timed out during simultaneous BT discovery.
+	 */
+	.can_ext_scan = false,
+	.legacy_txpd = true,
+	/*
+	 * SD8777 produced corrupt RX headers and firmware stalls with
+	 * multi-port aggregation; keep single-port transfers.
+	 */
+	.disable_mp_aggr = true,
 };
 
 static const struct mwifiex_sdio_device mwifiex_sdio_sd8786 = {
