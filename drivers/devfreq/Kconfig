@@ -114,6 +114,16 @@ config ARM_RK3399_DMC_DEVFREQ
           It sets the frequency for the memory controller and reads the usage counts
           from hardware.
 
+config ARM_PXA988_DDR_DEVFREQ
+	tristate "Marvell PXA988/PXA986 DDR DEVFREQ Driver"
+	depends on ARCH_MMP || COMPILE_TEST
+	select DEVFREQ_GOV_SIMPLE_ONDEMAND
+	select PM_OPP
+	help
+	  This adds the DEVFREQ driver for the Marvell PXA988/PXA986 LPDDR2
+	  memory controller (MCK4). It scales active DDR frequency using
+	  MCK4 performance counters and OPP/regulator support.
+
 source "drivers/devfreq/event/Kconfig"
 
 endif # PM_DEVFREQ
