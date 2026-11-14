@@ -212,6 +212,7 @@ struct bmc150_accel_data {
 	int ev_enable_state;
 	int64_t timestamp, old_timestamp; /* Only used in hw fifo mode. */
 	const struct bmc150_accel_chip_info *chip_info;
+	struct iio_mount_matrix orientation;
 };
 
 static const struct {
@@ -972,6 +973,20 @@ static const struct iio_event_spec bmc150_accel_event = {
 				 BIT(IIO_EV_INFO_PERIOD)
 };
 
+static const struct iio_mount_matrix *
+bmc150_accel_get_mount_matrix(const struct iio_dev *indio_dev,
+			      const struct iio_chan_spec *chan)
+{
+	struct bmc150_accel_data *data = iio_priv(indio_dev);
+
+	return &data->orientation;
+}
+
+static const struct iio_chan_spec_ext_info bmc150_accel_ext_info[] = {
+	IIO_MOUNT_MATRIX(IIO_SHARED_BY_TYPE, bmc150_accel_get_mount_matrix),
+	{ },
+};
+
 #define BMC150_ACCEL_CHANNEL(_axis, bits) {				\
 	.type = IIO_ACCEL,						\
 	.modified = 1,							\
@@ -979,6 +994,7 @@ static const struct iio_event_spec bmc150_accel_event = {
 	.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),			\
 	.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE) |		\
 				BIT(IIO_CHAN_INFO_SAMP_FREQ),		\
+	.ext_info = bmc150_accel_ext_info,				\
 	.scan_index = AXIS_##_axis,					\
 	.scan_type = {							\
 		.sign = 's',						\
@@ -1563,6 +1579,10 @@ int bmc150_accel_core_probe(struct device *dev, struct regmap *regmap, int irq,
 	data->irq = irq;
 
 	data->regmap = regmap;
+
+	ret = of_iio_read_mount_matrix(dev, "mount-matrix", &data->orientation);
+	if (ret)
+		return ret;
 
 	ret = bmc150_accel_chip_init(data);
 	if (ret < 0)
