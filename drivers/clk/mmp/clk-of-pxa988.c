@@ -17,6 +17,8 @@
 #include <linux/slab.h>
 #include <linux/clk.h>
 #include <linux/clk-provider.h>
+#include <linux/iopoll.h>
+#include <linux/stop_machine.h>
 
 #include <dt-bindings/clock/marvell,pxa988.h>
 
@@ -32,6 +34,7 @@
 #define MPMU_VRCR		0x0064
 
 /* APMU register offsets */
+#define APMU_CP_CCR		0x0000
 #define APMU_CCR		0x0004
 #define APMU_CCSR		0x000c
 #define APMU_SQU_CLK_GATE	0x001c
@@ -44,8 +47,12 @@
 #define APMU_USB		0x005c
 #define APMU_DFC		0x0060
 #define APMU_GEU		0x0068
+#define APMU_DEBUG		0x0088
 #define APMU_TRACE		0x0088
+#define APMU_IMR		0x0098
+#define APMU_ISR		0x00a0
 #define APMU_VPU		0x00a4
+#define APMU_MC_HW_SLP_TYPE	0x00b0
 #define APMU_PLL_SEL_STATUS	0x00c4
 #define APMU_GC			0x00cc
 #define APMU_GC2D		0x00d4
@@ -252,6 +259,474 @@ static void __init pxa988_pll_init(struct pxa988_clk_unit *pxa_unit)
 	mmp_clk_add(unit, PXA988_CLK_PLL3P, clk);
 }
 
+static DEFINE_SPINLOCK(pxa988_fc_lock);
+
+static const char * const pxa988_cpu_parent_names[] = {
+	"pll1_624", "pll3p", "pll2", "pll2p"
+};
+
+static const struct pxa988_core_op {
+	u8 sel;
+	u32 div;
+} pxa988_core_ops[] = {
+	{ 0, 0x049 }, /* pll1_624 / 2 = 312 MHz */
+	{ 0, 0x240 }, /* pll1_624 / 1 = 624 MHz */
+	{ 2, 0x240 }, /* pll2 / 1 = 1066 MHz */
+	{ 1, 0x240 }, /* pll3p / 1 = ~1205 MHz */
+};
+
+struct pxa988_core_clk {
+	struct clk_hw hw;
+	void __iomem *apmu_base;
+	void __iomem *mpmu_base;
+};
+
+struct pxa988_core_fc_arg {
+	struct pxa988_core_clk *core;
+	u8 sel;
+	u32 div;
+};
+
+#define to_pxa988_core_clk(_hw) container_of(_hw, struct pxa988_core_clk, hw)
+
+static inline void pxa988_ccsr_unlock(void __iomem *apmu_base)
+{
+	u32 val = readl_relaxed(apmu_base + APMU_CCR);
+
+	writel_relaxed(val | BIT(31), apmu_base + APMU_CCR);
+	writel_relaxed(val & ~BIT(31), apmu_base + APMU_CCR);
+}
+
+static u8 pxa988_core_get_parent(struct clk_hw *hw)
+{
+	struct pxa988_core_clk *core = to_pxa988_core_clk(hw);
+	u32 pllsel = readl_relaxed(core->apmu_base + APMU_PLL_SEL_STATUS);
+
+	return (pllsel >> 2) & 0x3;
+}
+
+static unsigned long pxa988_core_recalc_rate(struct clk_hw *hw,
+					     unsigned long parent_rate)
+{
+	struct pxa988_core_clk *core = to_pxa988_core_clk(hw);
+	u32 ccsr = readl_relaxed(core->apmu_base + APMU_CCSR);
+
+	pxa988_ccsr_unlock(core->apmu_base);
+	return parent_rate / ((ccsr & 0x7) + 1);
+}
+
+static int pxa988_core_determine_rate(struct clk_hw *hw,
+				      struct clk_rate_request *req)
+{
+	struct clk_hw *best_parent = NULL;
+	unsigned long best_prate = 0;
+	unsigned long best_rate = 0;
+	unsigned long best_diff = ULONG_MAX;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pxa988_core_ops); i++) {
+		struct clk_hw *parent;
+		unsigned long prate, rate, diff;
+		u32 div = (pxa988_core_ops[i].div & 0x7) + 1;
+
+		parent = clk_hw_get_parent_by_index(hw, pxa988_core_ops[i].sel);
+		if (!parent)
+			continue;
+
+		prate = clk_hw_get_rate(parent);
+		rate = prate / div;
+		if (rate < req->min_rate || rate > req->max_rate)
+			continue;
+
+		diff = (rate > req->rate) ? (rate - req->rate) : (req->rate - rate);
+		if (diff < best_diff) {
+			best_diff = diff;
+			best_parent = parent;
+			best_prate = prate;
+			best_rate = rate;
+		}
+	}
+
+	if (!best_parent)
+		return -EINVAL;
+
+	req->best_parent_hw = best_parent;
+	req->best_parent_rate = best_prate;
+	req->rate = best_rate;
+	return 0;
+}
+
+static int pxa988_core_fc_sm(void *data)
+{
+	struct pxa988_core_fc_arg *arg = data;
+	void __iomem *apmu = arg->core->apmu_base;
+	void __iomem *mpmu = arg->core->mpmu_base;
+	unsigned long flags;
+	u32 val, cc, fccr;
+	int ret;
+
+	ret = readl_poll_timeout_atomic(apmu + APMU_CCSR, val,
+					!(val & BIT(24)) && (val & BIT(25)),
+					1, 10000);
+	if (ret)
+		goto out_unlock;
+
+	/* Enable AP FC done interrupt status and ACK handshake */
+	writel_relaxed(readl_relaxed(apmu + APMU_IMR) | BIT(1), apmu + APMU_IMR);
+	writel_relaxed(readl_relaxed(apmu + APMU_DEBUG) | BIT(0) | BIT(1) |
+		       BIT(3) | BIT(21) | BIT(22), apmu + APMU_DEBUG);
+	writel_relaxed(readl_relaxed(apmu + APMU_CP_CCR) | BIT(27),
+		       apmu + APMU_CP_CCR);
+	writel_relaxed(readl_relaxed(apmu + APMU_ISR) & ~BIT(1), apmu + APMU_ISR);
+
+	spin_lock_irqsave(&pxa988_fc_lock, flags);
+	fccr = readl_relaxed(mpmu + MPMU_FCCR);
+	fccr = (fccr & ~(7U << 29)) | ((u32)arg->sel << 29);
+	writel_relaxed(fccr, mpmu + MPMU_FCCR);
+	readl_relaxed(mpmu + MPMU_FCCR);
+	spin_unlock_irqrestore(&pxa988_fc_lock, flags);
+
+	cc = readl_relaxed(apmu + APMU_CCR);
+	cc &= ~(GENMASK(11, 0) | BIT(24) | BIT(25) | BIT(26) | BIT(28));
+	cc |= arg->div | GENMASK(23, 18) | BIT(27);
+	writel(cc | BIT(24), apmu + APMU_CCR);
+
+	ret = readl_poll_timeout_atomic(apmu + APMU_ISR, val,
+					val & BIT(1), 1, 10000);
+	writel(readl_relaxed(apmu + APMU_CCR) & ~BIT(24), apmu + APMU_CCR);
+	writel_relaxed(readl_relaxed(apmu + APMU_ISR) & ~BIT(1), apmu + APMU_ISR);
+
+	if (!ret &&
+	    (((readl_relaxed(apmu + APMU_PLL_SEL_STATUS) >> 2) & 0x3) != arg->sel ||
+	     (readl_relaxed(apmu + APMU_CCSR) & GENMASK(11, 0)) != arg->div))
+		ret = -EIO;
+
+out_unlock:
+	pxa988_ccsr_unlock(apmu);
+	return ret;
+}
+
+static int pxa988_core_set_rate_and_parent(struct clk_hw *hw,
+					   unsigned long rate,
+					   unsigned long parent_rate,
+					   u8 index)
+{
+	struct pxa988_core_clk *core = to_pxa988_core_clk(hw);
+	struct pxa988_core_fc_arg arg = {
+		.core = core,
+		.sel = index,
+	};
+	bool found = false;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pxa988_core_ops); i++) {
+		u32 div = (pxa988_core_ops[i].div & 0x7) + 1;
+
+		if (pxa988_core_ops[i].sel == index &&
+		    parent_rate / div == rate) {
+			arg.div = pxa988_core_ops[i].div;
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		return -EINVAL;
+
+	return stop_machine(pxa988_core_fc_sm, &arg,
+			    cpumask_of(cpumask_first(cpu_online_mask)));
+}
+
+static int pxa988_core_set_rate(struct clk_hw *hw, unsigned long rate,
+				unsigned long parent_rate)
+{
+	return pxa988_core_set_rate_and_parent(hw, rate, parent_rate,
+						pxa988_core_get_parent(hw));
+}
+
+static int pxa988_core_set_parent(struct clk_hw *hw, u8 index)
+{
+	struct pxa988_core_clk *core = to_pxa988_core_clk(hw);
+	struct pxa988_core_fc_arg arg = {
+		.core = core,
+		.sel = index,
+		.div = 0x240,
+	};
+
+	if (index >= ARRAY_SIZE(pxa988_cpu_parent_names))
+		return -EINVAL;
+
+	return stop_machine(pxa988_core_fc_sm, &arg,
+			    cpumask_of(cpumask_first(cpu_online_mask)));
+}
+
+static const struct clk_ops pxa988_core_clk_ops = {
+	.get_parent = pxa988_core_get_parent,
+	.set_parent = pxa988_core_set_parent,
+	.recalc_rate = pxa988_core_recalc_rate,
+	.determine_rate = pxa988_core_determine_rate,
+	.set_rate = pxa988_core_set_rate,
+	.set_rate_and_parent = pxa988_core_set_rate_and_parent,
+};
+
+static struct clk * __init pxa988_register_core_clk(struct pxa988_clk_unit *pxa_unit)
+{
+	struct pxa988_core_clk *core;
+	struct clk_init_data init = {};
+	int ret;
+
+	core = kzalloc(sizeof(*core), GFP_KERNEL);
+	if (!core)
+		return ERR_PTR(-ENOMEM);
+
+	init.name = "cpu";
+	init.ops = &pxa988_core_clk_ops;
+	init.parent_names = pxa988_cpu_parent_names;
+	init.num_parents = ARRAY_SIZE(pxa988_cpu_parent_names);
+
+	core->hw.init = &init;
+	core->apmu_base = pxa_unit->apmu_base;
+	core->mpmu_base = pxa_unit->mpmu_base;
+
+	ret = clk_hw_register(NULL, &core->hw);
+	if (ret) {
+		kfree(core);
+		return ERR_PTR(ret);
+	}
+
+	return core->hw.clk;
+}
+
+static const char * const pxa988_ddr_parent_names[] = {
+	"pll1_416", "pll1_624", "pll2", "pll2p"
+};
+
+static const struct pxa988_ddr_op {
+	u8 sel;
+	u8 tbl;
+} pxa988_ddr_ops[] = {
+	{ 1, 3 }, /* pll1_624 / 2 = 312 MHz, bootloader MCK4 table 3 */
+	{ 3, 5 }, /* pll2p / 2 = 533 MHz, bootloader MCK4 table 5 */
+};
+
+struct pxa988_ddr_clk {
+	struct clk_hw hw;
+	void __iomem *apmu_base;
+	void __iomem *mpmu_base;
+};
+
+struct pxa988_ddr_fc_arg {
+	struct pxa988_ddr_clk *ddr;
+	u8 sel;
+	u8 tbl;
+};
+
+#define to_pxa988_ddr_clk(_hw) container_of(_hw, struct pxa988_ddr_clk, hw)
+
+static u8 pxa988_ddr_get_parent(struct clk_hw *hw)
+{
+	struct pxa988_ddr_clk *ddr = to_pxa988_ddr_clk(hw);
+	u32 pllsel = readl_relaxed(ddr->apmu_base + APMU_PLL_SEL_STATUS);
+
+	return (pllsel >> 4) & 0x3;
+}
+
+static unsigned long pxa988_ddr_recalc_rate(struct clk_hw *hw,
+					    unsigned long parent_rate)
+{
+	struct pxa988_ddr_clk *ddr = to_pxa988_ddr_clk(hw);
+	u32 ccsr = readl_relaxed(ddr->apmu_base + APMU_CCSR);
+	u32 ddr_div = (((ccsr >> 12) & 0x7) + 1) * 2;
+
+	pxa988_ccsr_unlock(ddr->apmu_base);
+	return parent_rate / ddr_div;
+}
+
+static int pxa988_ddr_determine_rate(struct clk_hw *hw,
+				     struct clk_rate_request *req)
+{
+	struct clk_hw *best_parent = NULL;
+	unsigned long best_prate = 0;
+	unsigned long best_rate = 0;
+	unsigned long best_diff = ULONG_MAX;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pxa988_ddr_ops); i++) {
+		struct clk_hw *parent;
+		unsigned long prate, rate, diff;
+
+		parent = clk_hw_get_parent_by_index(hw, pxa988_ddr_ops[i].sel);
+		if (!parent)
+			continue;
+
+		prate = clk_hw_get_rate(parent);
+		rate = prate / 2;
+		if (rate < req->min_rate || rate > req->max_rate)
+			continue;
+
+		diff = (rate > req->rate) ? (rate - req->rate) : (req->rate - rate);
+		if (diff < best_diff) {
+			best_diff = diff;
+			best_parent = parent;
+			best_prate = prate;
+			best_rate = rate;
+		}
+	}
+
+	if (!best_parent)
+		return -EINVAL;
+
+	req->best_parent_hw = best_parent;
+	req->best_parent_rate = best_prate;
+	req->rate = best_rate;
+	return 0;
+}
+
+static int pxa988_ddr_fc_sm(void *data)
+{
+	struct pxa988_ddr_fc_arg *arg = data;
+	void __iomem *apmu = arg->ddr->apmu_base;
+	void __iomem *mpmu = arg->ddr->mpmu_base;
+	unsigned long flags;
+	u32 val, cc, fccr, tbl;
+	int ret;
+
+	ret = readl_poll_timeout_atomic(apmu + APMU_CCSR, val,
+					!(val & BIT(24)) && (val & BIT(25)),
+					1, 10000);
+	if (ret)
+		goto out_unlock;
+
+	writel_relaxed(readl_relaxed(apmu + APMU_IMR) | BIT(1), apmu + APMU_IMR);
+	writel_relaxed(readl_relaxed(apmu + APMU_DEBUG) | BIT(0) | BIT(1) |
+		       BIT(3) | BIT(21) | BIT(22), apmu + APMU_DEBUG);
+	writel_relaxed(readl_relaxed(apmu + APMU_CP_CCR) | BIT(27),
+		       apmu + APMU_CP_CCR);
+	writel_relaxed(readl_relaxed(apmu + APMU_ISR) & ~BIT(1), apmu + APMU_ISR);
+
+	spin_lock_irqsave(&pxa988_fc_lock, flags);
+	fccr = readl_relaxed(mpmu + MPMU_FCCR);
+	fccr = (fccr & ~(3U << 23)) | ((u32)arg->sel << 23);
+	writel_relaxed(fccr, mpmu + MPMU_FCCR);
+	readl_relaxed(mpmu + MPMU_FCCR);
+	spin_unlock_irqrestore(&pxa988_fc_lock, flags);
+
+	tbl = readl_relaxed(apmu + APMU_MC_HW_SLP_TYPE);
+	tbl = (tbl & ~(BIT(6) | GENMASK(5, 3))) | ((u32)arg->tbl << 3);
+	writel_relaxed(tbl, apmu + APMU_MC_HW_SLP_TYPE);
+
+	cc = readl_relaxed(apmu + APMU_CCR);
+	cc &= ~(GENMASK(14, 12) | BIT(24) | BIT(25) | BIT(26));
+	writel(cc | BIT(27) | BIT(25), apmu + APMU_CCR);
+
+	ret = readl_poll_timeout_atomic(apmu + APMU_ISR, val,
+					val & BIT(1), 1, 10000);
+	writel(readl_relaxed(apmu + APMU_CCR) & ~BIT(25), apmu + APMU_CCR);
+	writel_relaxed(readl_relaxed(apmu + APMU_ISR) & ~BIT(1), apmu + APMU_ISR);
+
+	if (!ret &&
+	    (((readl_relaxed(apmu + APMU_PLL_SEL_STATUS) >> 4) & 0x3) != arg->sel ||
+	     (readl_relaxed(apmu + APMU_CCSR) & GENMASK(14, 12))))
+		ret = -EIO;
+
+out_unlock:
+	pxa988_ccsr_unlock(apmu);
+	return ret;
+}
+
+static int pxa988_ddr_set_rate_and_parent(struct clk_hw *hw,
+					  unsigned long rate,
+					  unsigned long parent_rate,
+					  u8 index)
+{
+	struct pxa988_ddr_clk *ddr = to_pxa988_ddr_clk(hw);
+	struct pxa988_ddr_fc_arg arg = {
+		.ddr = ddr,
+		.sel = index,
+	};
+	bool found = false;
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pxa988_ddr_ops); i++) {
+		if (pxa988_ddr_ops[i].sel == index &&
+		    parent_rate / 2 == rate) {
+			arg.tbl = pxa988_ddr_ops[i].tbl;
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		return -EINVAL;
+
+	return stop_machine(pxa988_ddr_fc_sm, &arg,
+			    cpumask_of(cpumask_first(cpu_online_mask)));
+}
+
+static int pxa988_ddr_set_rate(struct clk_hw *hw, unsigned long rate,
+			       unsigned long parent_rate)
+{
+	return pxa988_ddr_set_rate_and_parent(hw, rate, parent_rate,
+						pxa988_ddr_get_parent(hw));
+}
+
+static int pxa988_ddr_set_parent(struct clk_hw *hw, u8 index)
+{
+	struct pxa988_ddr_clk *ddr = to_pxa988_ddr_clk(hw);
+	struct pxa988_ddr_fc_arg arg = {
+		.ddr = ddr,
+		.sel = index,
+	};
+	int i;
+
+	for (i = 0; i < ARRAY_SIZE(pxa988_ddr_ops); i++) {
+		if (pxa988_ddr_ops[i].sel == index) {
+			arg.tbl = pxa988_ddr_ops[i].tbl;
+			return stop_machine(pxa988_ddr_fc_sm, &arg,
+					    cpumask_of(cpumask_first(cpu_online_mask)));
+		}
+	}
+
+	return -EINVAL;
+}
+
+static const struct clk_ops pxa988_ddr_clk_ops = {
+	.get_parent = pxa988_ddr_get_parent,
+	.set_parent = pxa988_ddr_set_parent,
+	.recalc_rate = pxa988_ddr_recalc_rate,
+	.determine_rate = pxa988_ddr_determine_rate,
+	.set_rate = pxa988_ddr_set_rate,
+	.set_rate_and_parent = pxa988_ddr_set_rate_and_parent,
+};
+
+static struct clk * __init pxa988_register_ddr_clk(struct pxa988_clk_unit *pxa_unit)
+{
+	struct pxa988_ddr_clk *ddr;
+	struct clk_init_data init = {};
+	int ret;
+
+	ddr = kzalloc(sizeof(*ddr), GFP_KERNEL);
+	if (!ddr)
+		return ERR_PTR(-ENOMEM);
+
+	init.name = "ddr";
+	init.ops = &pxa988_ddr_clk_ops;
+	init.parent_names = pxa988_ddr_parent_names;
+	init.num_parents = ARRAY_SIZE(pxa988_ddr_parent_names);
+
+	ddr->hw.init = &init;
+	ddr->apmu_base = pxa_unit->apmu_base;
+	ddr->mpmu_base = pxa_unit->mpmu_base;
+
+	ret = clk_hw_register(NULL, &ddr->hw);
+	if (ret) {
+		kfree(ddr);
+		return ERR_PTR(ret);
+	}
+
+	return ddr->hw.clk;
+}
+
 static void __init pxa988_core_clk_init(struct pxa988_clk_unit *pxa_unit)
 {
 	struct mmp_clk_unit *unit = &pxa_unit->unit;
@@ -266,8 +741,7 @@ static void __init pxa988_core_clk_init(struct pxa988_clk_unit *pxa_unit)
 	pllsel = readl_relaxed(pxa_unit->apmu_base + APMU_PLL_SEL_STATUS);
 	ccsr = readl_relaxed(pxa_unit->apmu_base + APMU_CCSR);
 	/* Pulse core_rd_st_clear so hardware FC lock is released */
-	writel_relaxed(readl_relaxed(pxa_unit->apmu_base + APMU_CCR) | BIT(31),
-		       pxa_unit->apmu_base + APMU_CCR);
+	pxa988_ccsr_unlock(pxa_unit->apmu_base);
 
 	pll3cr = readl_relaxed(pxa_unit->mpmu_base + MPMU_PLL3CR);
 
@@ -324,16 +798,26 @@ static void __init pxa988_core_clk_init(struct pxa988_clk_unit *pxa_unit)
 	ddr_div = (((ccsr >> 12) & 0x7) + 1) * 2;
 	bus_div = (((ccsr >> 15) & 0x7) + 1);
 
-	clk = clk_register_fixed_factor(NULL, "cpu", cpu_parent,
-					CLK_SET_RATE_PARENT, 1, core_div);
+	clk = pxa988_register_core_clk(pxa_unit);
+	if (IS_ERR(clk)) {
+		pr_err("pxa988-clk: failed to register core clk (%ld), using fixed factor\n",
+		       PTR_ERR(clk));
+		clk = clk_register_fixed_factor(NULL, "cpu", cpu_parent,
+						CLK_SET_RATE_PARENT, 1, core_div);
+	}
 	mmp_clk_add(unit, PXA988_CLK_CPU, clk);
 
 	/* TWD is hardwired as CPU clock / 8 */
 	clk = clk_register_fixed_factor(NULL, "twd", "cpu", 0, 1, 8);
 	mmp_clk_add(unit, PXA988_CLK_TWD, clk);
 
-	clk = clk_register_fixed_factor(NULL, "ddr", ddr_parent,
-					CLK_SET_RATE_PARENT, 1, ddr_div);
+	clk = pxa988_register_ddr_clk(pxa_unit);
+	if (IS_ERR(clk)) {
+		pr_err("pxa988-clk: failed to register ddr clk (%ld), using fixed factor\n",
+		       PTR_ERR(clk));
+		clk = clk_register_fixed_factor(NULL, "ddr", ddr_parent,
+						CLK_SET_RATE_PARENT, 1, ddr_div);
+	}
 	mmp_clk_add(unit, PXA988_CLK_DDR, clk);
 
 	clk = clk_register_fixed_factor(NULL, "axi", axi_parent,
