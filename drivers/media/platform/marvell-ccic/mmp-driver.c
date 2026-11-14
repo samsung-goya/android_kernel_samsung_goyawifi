@@ -48,6 +48,7 @@ struct mmp_camera {
 	struct clk *mipi_clk;
 	struct clk *hclk;
 	int irq;
+	atomic_t power_count;
 };
 
 static inline struct mmp_camera *mcam_to_cam(struct mcam_camera *mcam)
@@ -148,6 +149,8 @@ static int mmpcam_power_up(struct mcam_camera *mcam)
 	struct mmp_camera_platform_data *pdata;
 
 	if (cam->pdev->dev.of_node) {
+		if (atomic_inc_return(&cam->power_count) > 1)
+			return 0;
 		if (!IS_ERR_OR_NULL(cam->hclk))
 			clk_prepare_enable(cam->hclk);
 		mcam_clk_enable(mcam);
@@ -185,6 +188,10 @@ static void mmpcam_power_down(struct mcam_camera *mcam)
 	struct mmp_camera_platform_data *pdata;
 
 	if (cam->pdev->dev.of_node) {
+		if (!atomic_add_unless(&cam->power_count, -1, 0))
+			return;
+		if (atomic_read(&cam->power_count) > 0)
+			return;
 		mcam_clk_disable(mcam);
 		if (!IS_ERR_OR_NULL(cam->hclk))
 			clk_disable_unprepare(cam->hclk);
