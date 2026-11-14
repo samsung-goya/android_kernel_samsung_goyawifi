@@ -123,6 +123,14 @@
 			#reset-cells = <1>;
 		};
 
+		watchdog: watchdog@d4080000 {
+			compatible = "marvell,pxa988-wdt";
+			reg = <0xd4080000 0x100>,
+			      <0xd4050000 0x2000>;
+			reg-names = "wdt", "mpmu";
+			status = "disabled";
+		};
+
 		axi@d4200000 {
 			compatible = "mrvl,axi-bus", "simple-bus";
 			#address-cells = <1>;

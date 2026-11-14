@@ -822,3 +822,7 @@
 	operating-points-v2 = <&cpu_opp_table>;
 	cpu-supply = <&buck1>;
 };
+
+&watchdog {
+	status = "okay";
+};
