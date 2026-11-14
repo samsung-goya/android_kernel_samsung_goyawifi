@@ -11,10 +11,13 @@
  */
 #include <linux/module.h>
 #include <linux/init.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/slab.h>
 #include <linux/dma-mapping.h>
 #include <linux/dmaengine.h>
+#include <linux/genalloc.h>
 #include <linux/platform_data/dma-mmp_tdma.h>
 #include <linux/platform_data/mmp_audio.h>
 
@@ -108,6 +111,23 @@ static int mmp_pcm_open(struct snd_pcm_substream *substream)
 	struct mmp_dma_data dma_data;
 	struct resource *r;
 
+	if (component->dev->of_node) {
+		struct snd_pcm_hardware hw = mmp_pcm_hardware[substream->stream];
+		struct dma_chan *chan;
+		const char *name = substream->stream == SNDRV_PCM_STREAM_PLAYBACK ?
+				   "tx" : "rx";
+
+		/* SQU uses fixed SRAM buffers; avoid uncached mmap faults. */
+		hw.info &= ~(SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID);
+		snd_soc_set_runtime_hwparams(substream, &hw);
+
+		chan = dma_request_chan(component->dev, name);
+		if (IS_ERR(chan))
+			return PTR_ERR(chan);
+
+		return snd_dmaengine_pcm_open(substream, chan);
+	}
+
 	r = platform_get_resource(pdev, IORESOURCE_DMA, substream->stream);
 	if (!r)
 		return -EBUSY;
@@ -144,14 +164,25 @@ static const struct snd_pcm_ops mmp_pcm_ops = {
 	.mmap		= mmp_pcm_mmap,
 };
 
+static struct gen_pool *mmp_pcm_get_sram_pool(struct snd_soc_pcm_runtime *rtd)
+{
+	struct snd_soc_component *component = snd_soc_rtdcom_lookup(rtd, DRV_NAME);
+
+	if (component && component->dev->of_node)
+		return of_gen_pool_get(component->dev->of_node, "asram", 0);
+
+	return sram_get_gpool("asram");
+}
+
 static void mmp_pcm_free_dma_buffers(struct snd_pcm *pcm)
 {
+	struct snd_soc_pcm_runtime *rtd = pcm->private_data;
 	struct snd_pcm_substream *substream;
 	struct snd_dma_buffer *buf;
 	int stream;
 	struct gen_pool *gpool;
 
-	gpool = sram_get_gpool("asram");
+	gpool = mmp_pcm_get_sram_pool(rtd);
 	if (!gpool)
 		return;
 
@@ -174,6 +205,8 @@ static void mmp_pcm_free_dma_buffers(struct snd_pcm *pcm)
 static int mmp_pcm_preallocate_dma_buffer(struct snd_pcm_substream *substream,
 								int stream)
 {
+	struct snd_pcm *pcm = substream->pcm;
+	struct snd_soc_pcm_runtime *rtd = pcm->private_data;
 	struct snd_dma_buffer *buf = &substream->dma_buffer;
 	size_t size = mmp_pcm_hardware[stream].buffer_bytes_max;
 	struct gen_pool *gpool;
@@ -182,7 +215,7 @@ static int mmp_pcm_preallocate_dma_buffer(struct snd_pcm_substream *substream,
 	buf->dev.dev = substream->pcm->card->dev;
 	buf->private_data = NULL;
 
-	gpool = sram_get_gpool("asram");
+	gpool = mmp_pcm_get_sram_pool(rtd);
 	if (!gpool)
 		return -ENOMEM;
 
@@ -234,14 +267,26 @@ static int mmp_pcm_probe(struct platform_device *pdev)
 						pdata->buffer_max_capture;
 		mmp_pcm_hardware[SNDRV_PCM_STREAM_CAPTURE].period_bytes_max =
 						pdata->period_max_capture;
+	} else if (pdev->dev.of_node) {
+		mmp_pcm_hardware[SNDRV_PCM_STREAM_PLAYBACK].buffer_bytes_max = 16384;
+		mmp_pcm_hardware[SNDRV_PCM_STREAM_PLAYBACK].period_bytes_max = 4096;
+		mmp_pcm_hardware[SNDRV_PCM_STREAM_CAPTURE].buffer_bytes_max = 16384;
+		mmp_pcm_hardware[SNDRV_PCM_STREAM_CAPTURE].period_bytes_max = 4096;
 	}
 	return devm_snd_soc_register_component(&pdev->dev, &mmp_soc_component,
 					       NULL, 0);
 }
 
+static const struct of_device_id mmp_pcm_of_ids[] = {
+	{ .compatible = "marvell,mmp-pcm-audio" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, mmp_pcm_of_ids);
+
 static struct platform_driver mmp_pcm_driver = {
 	.driver = {
 		.name = "mmp-pcm-audio",
+		.of_match_table = of_match_ptr(mmp_pcm_of_ids),
 	},
 
 	.probe = mmp_pcm_probe,

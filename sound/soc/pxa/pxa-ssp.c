@@ -872,6 +872,10 @@ static const struct snd_soc_component_driver pxa_ssp_component = {
 	.pcm_free	= pxa2xx_pcm_free_dma_buffers,
 };
 
+static const struct snd_soc_component_driver pxa_ssp_dai_component = {
+	.name		= "pxa-ssp",
+};
+
 #ifdef CONFIG_OF
 static const struct of_device_id pxa_ssp_of_ids[] = {
 	{ .compatible = "mrvl,pxa-ssp-dai" },
@@ -882,7 +886,12 @@ MODULE_DEVICE_TABLE(of, pxa_ssp_of_ids);
 
 static int asoc_ssp_probe(struct platform_device *pdev)
 {
-	return devm_snd_soc_register_component(&pdev->dev, &pxa_ssp_component,
+	const struct snd_soc_component_driver *comp = &pxa_ssp_component;
+
+	if (of_property_read_bool(pdev->dev.of_node, "mrvl,no-pcm"))
+		comp = &pxa_ssp_dai_component;
+
+	return devm_snd_soc_register_component(&pdev->dev, comp,
 					       &pxa_ssp_dai, 1);
 }
 
