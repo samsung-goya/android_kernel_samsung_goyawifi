@@ -37,6 +37,8 @@
 #include <linux/slab.h>
 #include <linux/io.h>
 #include <linux/platform_data/i2c-pxa.h>
+#include <linux/gpio/consumer.h>
+#include <linux/pinctrl/consumer.h>
 
 #include <asm/irq.h>
 
@@ -212,6 +214,11 @@ struct pxa_i2c {
 	bool			shutdown;
 	u32			fm_mask;
 	u32			hs_mask;
+
+	struct i2c_bus_recovery_info recovery;
+	struct pinctrl		*pinctrl;
+	struct pinctrl_state	*pinctrl_default;
+	struct pinctrl_state	*pinctrl_gpio;
 };
 
 #define _IBMR(i2c)	((i2c)->reg_ibmr)
@@ -1154,6 +1161,8 @@ static int i2c_pxa_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num
 
 		if (i2c_debug)
 			dev_dbg(&adap->dev, "Retrying transmission\n");
+		if ((readl(_IBMR(i2c)) & 0x1) == 0)
+			i2c_recover_bus(&i2c->adap);
 		i2c_pxa_reset(i2c);
 		udelay(100);
 	}
@@ -1229,6 +1238,64 @@ static int i2c_pxa_probe_pdata(struct platform_device *pdev,
 			i2c->master_code = 0xe;
 		i2c->rate = plat->rate;
 	}
+	return 0;
+}
+
+static void i2c_pxa_prepare_recovery(struct i2c_adapter *adap)
+{
+	struct pxa_i2c *i2c = adap->algo_data;
+
+	pinctrl_select_state(i2c->pinctrl, i2c->pinctrl_gpio);
+}
+
+static void i2c_pxa_unprepare_recovery(struct i2c_adapter *adap)
+{
+	struct pxa_i2c *i2c = adap->algo_data;
+
+	pinctrl_select_state(i2c->pinctrl, i2c->pinctrl_default);
+}
+
+static int i2c_pxa_init_recovery(struct pxa_i2c *i2c, struct platform_device *dev)
+{
+	struct i2c_bus_recovery_info *bri = &i2c->recovery;
+	struct gpio_desc *scl_gpiod, *sda_gpiod;
+
+	if (!IS_ENABLED(CONFIG_OF) || !dev->dev.of_node)
+		return 0;
+
+	scl_gpiod = devm_gpiod_get_optional(&dev->dev, "scl",
+					    GPIOD_OUT_HIGH_OPEN_DRAIN);
+	if (IS_ERR(scl_gpiod))
+		return PTR_ERR(scl_gpiod);
+	if (!scl_gpiod)
+		return 0;
+
+	sda_gpiod = devm_gpiod_get_optional(&dev->dev, "sda",
+					    GPIOD_OUT_HIGH_OPEN_DRAIN);
+	if (IS_ERR(sda_gpiod))
+		return PTR_ERR(sda_gpiod);
+
+	i2c->pinctrl = devm_pinctrl_get(&dev->dev);
+	if (IS_ERR(i2c->pinctrl))
+		return PTR_ERR(i2c->pinctrl);
+
+	i2c->pinctrl_default = pinctrl_lookup_state(i2c->pinctrl,
+						    PINCTRL_STATE_DEFAULT);
+	if (IS_ERR(i2c->pinctrl_default))
+		return PTR_ERR(i2c->pinctrl_default);
+
+	i2c->pinctrl_gpio = pinctrl_lookup_state(i2c->pinctrl, "gpio");
+	if (IS_ERR(i2c->pinctrl_gpio))
+		return PTR_ERR(i2c->pinctrl_gpio);
+
+	bri->recover_bus = i2c_generic_scl_recovery;
+	bri->prepare_recovery = i2c_pxa_prepare_recovery;
+	bri->unprepare_recovery = i2c_pxa_unprepare_recovery;
+	bri->scl_gpiod = scl_gpiod;
+	bri->sda_gpiod = sda_gpiod;
+	i2c->adap.bus_recovery_info = bri;
+
+	dev_info(&dev->dev, "registered GPIO I2C bus recovery\n");
 	return 0;
 }
 
@@ -1347,6 +1414,10 @@ static int i2c_pxa_probe(struct platform_device *dev)
 #ifdef CONFIG_OF
 	i2c->adap.dev.of_node = dev->dev.of_node;
 #endif
+
+	ret = i2c_pxa_init_recovery(i2c, dev);
+	if (ret)
+		goto ereqirq;
 
 	ret = i2c_add_numbered_adapter(&i2c->adap);
 	if (ret < 0)

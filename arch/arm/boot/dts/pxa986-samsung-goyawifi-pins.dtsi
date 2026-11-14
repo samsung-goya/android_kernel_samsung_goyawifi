@@ -109,6 +109,13 @@
 		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
 	};
 
+	twsi1_gpio_pins: twsi1-gpio-pins {
+		pinctrl-single,pins = <
+			GPIO87 AF0	/* TSP/Bridge SCL as GPIO for bus recovery */
+			GPIO88 AF0	/* TSP/Bridge SDA as GPIO for bus recovery */
+		>;
+	};
+
 	sdh1_pins: sdh1-pins {
 		pinctrl-single,pins = <
 			MMC1_DAT0 AF0

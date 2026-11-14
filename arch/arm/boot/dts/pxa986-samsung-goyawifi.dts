@@ -342,8 +342,11 @@
 
 /* Shared Touchscreen & Display Bridge I2C Bus */
 &twsi1 {
-	pinctrl-names = "default";
+	pinctrl-names = "default", "gpio";
 	pinctrl-0 = <&twsi1_pins>;
+	pinctrl-1 = <&twsi1_gpio_pins>;
+	scl-gpios = <&gpio 87 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
+	sda-gpios = <&gpio 88 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>;
 	mrvl,i2c-fast-mode;
 	status = "okay";
 
