@@ -76,7 +76,7 @@ static int pxa_88pm805_hw_params(struct snd_pcm_substream *substream,
 	if (ret < 0)
 		return ret;
 
-	ret = snd_soc_dai_set_sysclk(cpu_dai, PXA_SSP_CLK_NET_PLL, 0,
+	ret = snd_soc_dai_set_sysclk(cpu_dai, PXA_SSP_CLK_AUDIO, 0,
 				     SND_SOC_CLOCK_OUT);
 	if (ret < 0)
 		return ret;

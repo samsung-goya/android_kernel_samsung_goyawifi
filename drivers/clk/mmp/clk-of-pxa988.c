@@ -424,7 +424,7 @@ static struct mmp_param_gate_clk apbc_gate_clks[] = {
 	{PXA988_CLK_SSP0, "ssp0_clk", "ssp0_mux",
 	 CLK_SET_RATE_PARENT, APBC_SSP0, 0x3, 0x3, 0x0, 0, &ssp0_lock},
 	{PXA988_CLK_SSP1, "ssp1_clk", "ssp1_mux",
-	 CLK_SET_RATE_PARENT, APBC_SSP1, 0x3, 0x3, 0x0, 0, &ssp1_lock},
+	 CLK_SET_RATE_PARENT, APBC_SSP1, 0x7, 0x3, 0x4, 0, &ssp1_lock},
 	{PXA988_CLK_TIMER0, "timer0_clk", "timer0_mux",
 	 CLK_SET_RATE_PARENT | CLK_IGNORE_UNUSED, APBC_TIMER0, 0x3, 0x3, 0x0, 0, &timer0_lock},
 	{PXA988_CLK_TIMER1, "timer1_clk", "timer1_mux",

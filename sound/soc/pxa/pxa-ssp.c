@@ -86,7 +86,7 @@ static void pxa_ssp_set_dma_params(struct ssp_device *ssp, int width4,
 {
 	dma->addr_width = width4 ? DMA_SLAVE_BUSWIDTH_4_BYTES :
 				   DMA_SLAVE_BUSWIDTH_2_BYTES;
-	dma->maxburst = 16;
+	dma->maxburst = (ssp->type == PXA910_SSP) ? 4 : 16;
 	dma->addr = ssp->phys_base + SSDR;
 }
 
@@ -253,12 +253,14 @@ static int pxa_ssp_set_dai_sysclk(struct snd_soc_dai *cpu_dai,
 		return -ENODEV;
 	}
 
-	/* The SSP clock must be disabled when changing SSP clock mode
-	 * on PXA2xx.  On PXA3xx it must be enabled when doing so. */
-	if (ssp->type != PXA3xx_SSP)
+	/*
+	 * The SSP clock must be disabled when changing SSP clock mode
+	 * on PXA2xx.  On PXA3xx/PXA910 it must be enabled when doing so.
+	 */
+	if (ssp->type != PXA3xx_SSP && ssp->type != PXA910_SSP)
 		clk_disable_unprepare(ssp->clk);
 	pxa_ssp_write_reg(ssp, SSCR0, sscr0);
-	if (ssp->type != PXA3xx_SSP)
+	if (ssp->type != PXA3xx_SSP && ssp->type != PXA910_SSP)
 		clk_prepare_enable(ssp->clk);
 
 	return 0;
@@ -585,6 +587,8 @@ static int pxa_ssp_hw_params(struct snd_pcm_substream *substream,
 	case SNDRV_PCM_FORMAT_S16_LE:
 		if (ssp->type == PXA3xx_SSP)
 			sscr0 |= SSCR0_FPCKE;
+		else if (ssp->type == PXA910_SSP && chn == 2)
+			sscr0 |= SSCR0_EDSS | SSCR0_TUM | SSCR0_RIM;
 		sscr0 |= SSCR0_DataSize(16);
 		break;
 	case SNDRV_PCM_FORMAT_S24_LE:
@@ -596,7 +600,7 @@ static int pxa_ssp_hw_params(struct snd_pcm_substream *substream,
 	}
 	pxa_ssp_write_reg(ssp, SSCR0, sscr0);
 
-	if (sscr0 & SSCR0_ACS) {
+	if ((sscr0 & SSCR0_ACS) && ssp->type != PXA910_SSP) {
 		ret = pxa_ssp_set_pll(priv, bclk);
 
 		/*
@@ -646,7 +650,9 @@ static int pxa_ssp_hw_params(struct snd_pcm_substream *substream,
 	case SND_SOC_DAIFMT_I2S:
 	       sspsp = pxa_ssp_read_reg(ssp, SSPSP);
 
-		if (((priv->sysclk / bclk) == 64) && (width == 16)) {
+		if (ssp->type == PXA910_SSP) {
+			sspsp |= SSPSP_FSRT | SSPSP_SFRMWDTH(width);
+		} else if (((priv->sysclk / bclk) == 64) && (width == 16)) {
 			/* This is a special case where the bitclk is 64fs
 			 * and we're not dealing with 2*32 bits of audio
 			 * samples.
