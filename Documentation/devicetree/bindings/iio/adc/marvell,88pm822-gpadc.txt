@@ -1,0 +1,15 @@
+Marvell 88PM822 GPADC IIO driver
+
+This node is a child of the Marvell 88PM822 PMIC MFD node (marvell,88pm822).
+
+Required properties:
+- compatible: must be "marvell,88pm822-gpadc"
+
+Example:
+	pmic@30 {
+		compatible = "marvell,88pm822", "marvell,88pm800";
+		...
+		gpadc {
+			compatible = "marvell,88pm822-gpadc";
+		};
+	};

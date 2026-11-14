@@ -945,4 +945,14 @@ config XILINX_XADC
 	  The driver can also be build as a module. If so, the module will be called
 	  xilinx-xadc.
 
+config 88PM822_GPADC
+	tristate "Marvell 88PM822 GPADC driver"
+	depends on MFD_88PM800
+	help
+	  Say yes here to enable support for the Marvell 88PM822 PMIC
+	  general-purpose ADC (VBAT and GPADC2/GPADC3 channels).
+
+	  This driver can also be built as a module. If so, the module will
+	  be called 88pm822-gpadc.
+
 endmenu

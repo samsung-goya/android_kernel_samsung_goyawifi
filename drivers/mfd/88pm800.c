@@ -179,6 +179,19 @@ static const struct mfd_cell regulator_devs[] = {
 	},
 };
 
+static const struct mfd_cell pm822_gpadc_devs[] = {
+	{
+	 .name = "88pm822-gpadc",
+	 .of_compatible = "marvell,88pm822-gpadc",
+	 .id = -1,
+	},
+	{
+	 .name = "88pm822-battery",
+	 .of_compatible = "marvell,88pm822-battery",
+	 .id = -1,
+	},
+};
+
 static const struct regmap_irq pm800_irqs[] = {
 	/* INT0 */
 	[PM800_IRQ_ONKEY] = {
@@ -380,8 +393,8 @@ static int device_gpadc_init_822(struct pm80x_chip *chip)
 	}
 
 	ret = regmap_update_bits(map, PM800_GPADC_MISC_CONFIG2,
-				 PM800_GPADC_MISC_GPFSM_EN,
-				 PM800_GPADC_MISC_GPFSM_EN);
+				 PM800_GPADC_MISC_GPFSM_EN | BIT(1),
+				 PM800_GPADC_MISC_GPFSM_EN | BIT(1));
 	if (ret < 0)
 		return ret;
 
@@ -396,6 +409,10 @@ static int device_gpadc_init_822(struct pm80x_chip *chip)
 		return ret;
 
 	ret = regmap_update_bits(map, 0x0D, 0x0F, 0x06);
+	if (ret < 0)
+		return ret;
+
+	ret = regmap_update_bits(map, PM800_GP_BIAS_ENA1, 0x44, 0x44);
 	if (ret < 0)
 		return ret;
 
@@ -694,6 +711,16 @@ static int device_800_init(struct pm80x_chip *chip,
 	if (ret) {
 		dev_err(chip->dev, "Failed to add regulators subdev\n");
 		goto out;
+	}
+
+	if (chip->type == CHIP_PM822) {
+		ret = mfd_add_devices(chip->dev, 0, &pm822_gpadc_devs[0],
+				      ARRAY_SIZE(pm822_gpadc_devs), NULL, 0,
+				      NULL);
+		if (ret) {
+			dev_err(chip->dev, "Failed to add gpadc subdev\n");
+			goto out;
+		}
 	}
 
 	return 0;
