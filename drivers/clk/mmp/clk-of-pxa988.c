@@ -554,11 +554,9 @@ static struct mmp_param_gate_clk apmu_gate_clks[] = {
 
 	/* CCIC camera clocks */
 	{PXA988_CLK_CCIC_AXI, "ccic_axi", "axi",
-	 CLK_SET_RATE_PARENT, APMU_CCIC0, 0x9, 0x9, 0x0, 0, &ccic0_lock},
-	{PXA988_CLK_CCIC0, "ccic0_clk", "pll1_624",
-	 CLK_SET_RATE_PARENT, APMU_CCIC0, 0x12, 0x12, 0x0, 0, &ccic0_lock},
-	{PXA988_CLK_CCIC0_PHY, "ccic0_phy_clk", "pll1_6",
-	 CLK_SET_RATE_PARENT, APMU_CCIC0, 0x24, 0x24, 0x0, 0, &ccic0_lock},
+	 CLK_SET_RATE_PARENT, APMU_CCIC0, 0x9, 0x9, 0x1, 0, &ccic0_lock},
+	{PXA988_CLK_CCIC0, "ccic0_clk", "ccic0_div",
+	 CLK_SET_RATE_PARENT, APMU_CCIC0, 0x8012, 0x8012, 0x2, 0, &ccic0_lock},
 
 	/* Graphics and video engine clocks */
 	{PXA988_CLK_VPU_AXI, "vpu_axi", "axi",
@@ -571,10 +569,98 @@ static struct mmp_param_gate_clk apmu_gate_clks[] = {
 	 CLK_SET_RATE_PARENT, APMU_GC2D, 0x30, 0x30, 0x0, 0, NULL},
 };
 
+struct pxa988_ccic_phy_clk {
+	struct clk_hw hw;
+	void __iomem *ccic_reg;
+	void __iomem *dbg_reg;
+	spinlock_t *lock;
+};
+
+#define CCIC_FUNC_MUX_SHIFT	16
+#define CCIC_FUNC_DIV_SHIFT	18
+#define CCIC_PHYSLOW_PRER	(0x1a << 10)
+#define CCIC_PHYCLK_SEL		BIT(7)
+#define CCIC_PHY_EN_BITS	(BIT(2) | BIT(5) | BIT(8) | BIT(9))
+#define CCIC_PHY_DIS_BITS	(BIT(2) | BIT(5) | BIT(9))
+#define CCIC_DBG_PHY_EN		0x06000000
+
+static int pxa988_ccic_phy_enable(struct clk_hw *hw)
+{
+	struct pxa988_ccic_phy_clk *phy = container_of(hw, struct pxa988_ccic_phy_clk, hw);
+	unsigned long flags;
+	u32 val;
+
+	spin_lock_irqsave(phy->lock, flags);
+	val = readl(phy->ccic_reg);
+	val &= ~((0x1f << 10) | BIT(7));
+	val |= CCIC_PHYSLOW_PRER | CCIC_PHYCLK_SEL | CCIC_PHY_EN_BITS;
+	writel(val, phy->ccic_reg);
+	spin_unlock_irqrestore(phy->lock, flags);
+
+	udelay(10);
+
+	spin_lock_irqsave(phy->lock, flags);
+	writel(readl(phy->dbg_reg) | CCIC_DBG_PHY_EN, phy->dbg_reg);
+	spin_unlock_irqrestore(phy->lock, flags);
+
+	udelay(10);
+	return 0;
+}
+
+static void pxa988_ccic_phy_disable(struct clk_hw *hw)
+{
+	struct pxa988_ccic_phy_clk *phy = container_of(hw, struct pxa988_ccic_phy_clk, hw);
+	unsigned long flags;
+
+	spin_lock_irqsave(phy->lock, flags);
+	writel(readl(phy->dbg_reg) & ~CCIC_DBG_PHY_EN, phy->dbg_reg);
+	writel(readl(phy->ccic_reg) & ~CCIC_PHY_DIS_BITS, phy->ccic_reg);
+	spin_unlock_irqrestore(phy->lock, flags);
+}
+
+static int pxa988_ccic_phy_is_enabled(struct clk_hw *hw)
+{
+	struct pxa988_ccic_phy_clk *phy = container_of(hw, struct pxa988_ccic_phy_clk, hw);
+
+	return (readl(phy->ccic_reg) & CCIC_PHY_EN_BITS) == CCIC_PHY_EN_BITS;
+}
+
+static const struct clk_ops pxa988_ccic_phy_ops = {
+	.enable = pxa988_ccic_phy_enable,
+	.disable = pxa988_ccic_phy_disable,
+	.is_enabled = pxa988_ccic_phy_is_enabled,
+};
+
+static struct clk * __init pxa988_register_ccic_phy(void __iomem *apmu_base)
+{
+	struct pxa988_ccic_phy_clk *phy;
+	struct clk_init_data init = {};
+	const char *parent = "pll1_6";
+
+	phy = kzalloc(sizeof(*phy), GFP_KERNEL);
+	if (!phy)
+		return ERR_PTR(-ENOMEM);
+
+	init.name = "ccic0_phy_clk";
+	init.ops = &pxa988_ccic_phy_ops;
+	init.flags = CLK_SET_RATE_PARENT;
+	init.parent_names = &parent;
+	init.num_parents = 1;
+
+	phy->hw.init = &init;
+	phy->ccic_reg = apmu_base + APMU_CCIC0;
+	phy->dbg_reg = apmu_base + APMU_TRACE;
+	phy->lock = &ccic0_lock;
+
+	return clk_register(NULL, &phy->hw);
+}
+
 static void __init pxa988_axi_periph_clk_init(struct pxa988_clk_unit *pxa_unit)
 {
 	struct mmp_clk_unit *unit = &pxa_unit->unit;
 	struct clk *clk;
+	unsigned long flags;
+	u32 val;
 
 	/* Register SDH0 (SD card) mix clock and functional gate */
 	sdh0_mix_config.reg_info.reg_clk_ctrl = pxa_unit->apmu_base + APMU_SDH0;
@@ -656,6 +742,20 @@ static void __init pxa988_axi_periph_clk_init(struct pxa988_clk_unit *pxa_unit)
 				    pxa_unit->apmu_base + APMU_GC,
 				    0x08, 0x08, 0x0, 0, &gc_lock);
 	mmp_clk_add(unit, PXA988_CLK_GC_AXI, clk);
+
+	/* Configure CCIC0 functional clock to pll1_624 / 2 (312 MHz) and register PHY clock */
+	spin_lock_irqsave(&ccic0_lock, flags);
+	val = readl(pxa_unit->apmu_base + APMU_CCIC0);
+	val &= ~((3 << CCIC_FUNC_MUX_SHIFT) | (7 << CCIC_FUNC_DIV_SHIFT));
+	val |= (1 << CCIC_FUNC_MUX_SHIFT) | (2 << CCIC_FUNC_DIV_SHIFT);
+	writel(val, pxa_unit->apmu_base + APMU_CCIC0);
+	spin_unlock_irqrestore(&ccic0_lock, flags);
+
+	clk_register_fixed_factor(NULL, "ccic0_div", "pll1_624",
+				  CLK_SET_RATE_PARENT, 1, 2);
+	clk = pxa988_register_ccic_phy(pxa_unit->apmu_base);
+	if (!IS_ERR(clk))
+		mmp_clk_add(unit, PXA988_CLK_CCIC0_PHY, clk);
 
 	/* Register general APMU gates */
 	mmp_register_gate_clks(unit, apmu_gate_clks, pxa_unit->apmu_base,
