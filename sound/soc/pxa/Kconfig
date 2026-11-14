@@ -219,3 +219,12 @@ config SND_MMP_SOC_BROWNSTONE
 	help
 	  Say Y if you want to add support for SoC audio on the
 	  Marvell Brownstone reference platform.
+
+config SND_MMP_SOC_88PM805
+	tristate "SoC Audio support for Marvell PXA988 with 88PM805"
+	depends on SND_MMP_SOC && I2C
+	select SND_PXA_SOC_SSP
+	select SND_SOC_88PM805
+	help
+	  Say Y if you want to add support for ASoC audio on Marvell PXA988/PXA986
+	  boards with an 88PM805 audio codec.
