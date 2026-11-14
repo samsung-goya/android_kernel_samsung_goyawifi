@@ -697,6 +697,15 @@
 	status = "okay";
 };
 
+&vpu_power {
+	power-supply = <&buck1>;
+	status = "okay";
+};
+
+&vpu {
+	status = "okay";
+};
+
 &thermal {
 	status = "okay";
 };

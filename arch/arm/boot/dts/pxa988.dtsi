@@ -66,14 +66,20 @@
 
 		sram: sram@d1004000 {
 			compatible = "mmio-sram";
-			reg = <0xd1004000 0xaa00>;
+			reg = <0xd1004000 0x1c000>;
 			#address-cells = <1>;
 			#size-cells = <1>;
-			ranges = <0 0xd1004000 0xaa00>;
+			ranges = <0 0xd1004000 0x1c000>;
 
 			asram: asram-section@0 {
 				reg = <0x0 0xaa00>;
 				label = "asram";
+				pool;
+			};
+
+			vsram: vsram-section@aa00 {
+				reg = <0xaa00 0x11600>;
+				label = "vsram";
 				pool;
 			};
 		};
@@ -186,6 +192,21 @@
 				clocks = <&soc_clocks PXA988_CLK_USB>;
 				clock-names = "usb";
 				dr_mode = "peripheral";
+				status = "disabled";
+			};
+
+			vpu: coda@d420d000 {
+				compatible = "marvell,pxa988-vpu";
+				reg = <0xd420d000 0x1000>;
+				interrupts = <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_VPU>,
+					 <&soc_clocks PXA988_CLK_VPU_AXI>;
+				clock-names = "per", "ahb";
+				assigned-clocks = <&soc_clocks PXA988_CLK_VPU>,
+						  <&soc_clocks PXA988_CLK_VPU_AXI>;
+				assigned-clock-rates = <156000000>, <156000000>;
+				iram = <&vsram>;
+				power-domains = <&vpu_power>;
 				status = "disabled";
 			};
 
@@ -437,6 +458,20 @@
 				 <&soc_clocks PXA988_CLK_GC_AXI>,
 				 <&soc_clocks PXA988_CLK_GC>;
 			clock-names = "reg", "bus", "core";
+			#power-domain-cells = <0>;
+			status = "disabled";
+		};
+
+		vpu_power: power-controller@d42828a4 {
+			compatible = "marvell,pxa988-vpu-power";
+			reg = <0xd42828a4 0x4>,
+			      <0xd42828d8 0x4>,
+			      <0xd42828dc 0x4>,
+			      <0xd42828f0 0x4>;
+			reg-names = "apmu-vpu", "pwr-ctrl", "pwr-tmr", "pwr-stat";
+			clocks = <&soc_clocks PXA988_CLK_VPU_AXI>,
+				 <&soc_clocks PXA988_CLK_VPU>;
+			clock-names = "bus", "core";
 			#power-domain-cells = <0>;
 			status = "disabled";
 		};
