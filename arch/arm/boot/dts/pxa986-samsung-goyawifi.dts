@@ -238,6 +238,12 @@
 		};
 	};
 
+	wifi_pwrseq: wifi-pwrseq {
+		compatible = "mmc-pwrseq-simple";
+		reset-gpios = <&gpio 51 GPIO_ACTIVE_LOW>;
+		post-power-on-delay-ms = <20>;
+	};
+
 	gpio-keys {
 		compatible = "gpio-keys";
 		pinctrl-names = "default";
@@ -484,11 +490,9 @@
 			};
 
 			ldo10: ldo10 {
-				regulator-name = "v_ldo10";
-				regulator-min-microvolt = <3100000>;
-				regulator-max-microvolt = <3100000>;
-				regulator-boot-on;
-				regulator-always-on;
+				regulator-name = "v_wib_3v3";
+				regulator-min-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
 			};
 
 			ldo11: ldo11 {
@@ -594,6 +598,26 @@
 	max-frequency = <50000000>;
 	assigned-clocks = <&soc_clocks PXA988_CLK_SDH0>;
 	assigned-clock-rates = <52000000>;
+	status = "okay";
+};
+
+/* Marvell 88W8777 SDIO Wi-Fi / Bluetooth */
+&sdh2 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdh2_wlan_pins &wlan_bt_ctrl_pins>;
+	bus-width = <4>;
+	non-removable;
+	no-sd;
+	no-mmc;
+	no-1-8-v;
+	cap-sdio-irq;
+	keep-power-in-suspend;
+	vmmc-supply = <&ldo10>;
+	mmc-pwrseq = <&wifi_pwrseq>;
+	max-frequency = <26000000>;
+	assigned-clocks = <&soc_clocks PXA988_CLK_SDH1>;
+	assigned-clock-rates = <52000000>;
+	mrvl,clk-delay-cycles = <15>;
 	status = "okay";
 };
 
