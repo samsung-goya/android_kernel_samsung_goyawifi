@@ -134,11 +134,34 @@
 			};
 
 			adma0: dma-controller@d42a0800 {
-				compatible = "marvell,adma-1.0", "marvell,pxa910-squ";
+				compatible = "marvell,pxa910-squ";
 				reg = <0xd42a0800 0x100>;
 				interrupts = <GIC_SPI 46 IRQ_TYPE_LEVEL_HIGH>;
 				#dma-cells = <1>;
 				asram = <&asram>;
+			};
+
+			ssp1: ssp@d42a0c00 {
+				compatible = "mrvl,pxa910-ssp";
+				reg = <0xd42a0c00 0x90>;
+				interrupts = <GIC_SPI 2 IRQ_TYPE_LEVEL_HIGH>;
+				clocks = <&soc_clocks PXA988_CLK_SSP1>;
+				status = "disabled";
+			};
+
+			ssp_dai1: pxa-ssp-dai@1 {
+				compatible = "mrvl,pxa-ssp-dai";
+				port = <&ssp1>;
+				mrvl,no-pcm;
+				status = "disabled";
+			};
+
+			mmp_pcm: mmp-pcm-audio {
+				compatible = "marvell,mmp-pcm-audio";
+				dmas = <&adma0 0>, <&adma0 1>;
+				dma-names = "tx", "rx";
+				asram = <&asram>;
+				status = "disabled";
 			};
 
 			usb: usb@d4208000 {

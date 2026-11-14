@@ -547,6 +547,13 @@
 			power-supplies = <&charger>;
 		};
 	};
+
+	pm805: codec@38 {
+		compatible = "marvell,88pm805";
+		reg = <0x38>;
+		marvell,pmic = <&pmic>;
+		micbias-supply = <&ldo14>;
+	};
 };
 
 /* ChipIdea USB 2.0 Device Controller */
@@ -621,7 +628,29 @@
 	status = "okay";
 };
 
+&ssp1 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&i2s_pins>;
+	status = "okay";
+};
+
+&ssp_dai1 {
+	status = "okay";
+};
+
+&mmp_pcm {
+	status = "okay";
+};
+
 / {
+	sound: sound@d4050044 {
+		compatible = "marvell,pxa-88pm805-snd-card";
+		reg = <0xd4050044 0x4>;
+		cpu-dai = <&ssp_dai1>;
+		audio-codec = <&pm805>;
+		platform = <&mmp_pcm>;
+	};
+
 	thermal-zones {
 		cpu_thermal: cpu-thermal {
 			polling-delay-passive = <1000>;

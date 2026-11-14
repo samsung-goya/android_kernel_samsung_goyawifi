@@ -25,6 +25,17 @@
 		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
 	};
 
+	i2s_pins: i2s-pins {
+		pinctrl-single,pins = <
+			GPIO21 AF1	/* I2S_BITCLK */
+			GPIO22 AF1	/* I2S_SYNC */
+			GPIO23 AF1	/* I2S_DATA_OUT */
+			GPIO24 AF1	/* I2S_SDATA_IN */
+		>;
+		pinctrl-single,bias-pullup = <PULL_NONE PULL_NONE PULL_NONE PULL_MASK>;
+		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
+	};
+
 	i2c_charger_pins: i2c-charger-pins {
 		pinctrl-single,pins = <
 			GPIO16 AF0	/* CHG_SCL */
