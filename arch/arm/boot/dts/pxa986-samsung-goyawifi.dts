@@ -200,6 +200,21 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&i2c_charger_pins>;
 		status = "okay";
+
+		charger: charger@34 {
+			compatible = "summit,smb328";
+			reg = <0x34>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&charger_pins>;
+			interrupt-parent = <&gpio>;
+			interrupts = <8 IRQ_TYPE_EDGE_FALLING>;
+			enable-gpios = <&gpio 98 GPIO_ACTIVE_LOW>;
+			extcon = <&muic>;
+			monitored-battery = <&battery>;
+			summit,dcp-input-current-microamp = <500000>;
+			summit,fast-charge-current-microamp = <500000>;
+			summit,float-voltage-microvolt = <4320000>;
+		};
 	};
 
 	muic_i2c: i2c-muic {
@@ -522,6 +537,43 @@
 		onkey {
 			compatible = "marvell,88pm822-onkey", "marvell,88pm80x-onkey";
 		};
+
+		gpadc {
+			compatible = "marvell,88pm822-gpadc";
+		};
+
+		battery: battery {
+			compatible = "marvell,88pm822-battery";
+			power-supplies = <&charger>;
+		};
+	};
+
+	thermal-zones {
+		cpu_thermal: cpu-thermal {
+			polling-delay-passive = <1000>;
+			polling-delay = <5000>;
+			thermal-sensors = <&thermal>;
+
+			trips {
+				cpu_alert0: trip-point0 {
+					temperature = <85000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu_alert1: trip-point1 {
+					temperature = <95000>;
+					hysteresis = <2000>;
+					type = "passive";
+				};
+
+				cpu_crit: trip-point2 {
+					temperature = <110000>;
+					hysteresis = <2000>;
+					type = "critical";
+				};
+			};
+		};
 	};
 };
 
@@ -590,5 +642,9 @@
 };
 
 &gpu {
+	status = "okay";
+};
+
+&thermal {
 	status = "okay";
 };

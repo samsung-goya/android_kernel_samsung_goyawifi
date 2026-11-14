@@ -33,6 +33,14 @@
 		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 	};
 
+	charger_pins: charger-pins {
+		pinctrl-single,pins = <
+			GPIO8 AF0	/* CHG_INT */
+			GPIO98 AF0	/* CHG_EN */
+		>;
+		pinctrl-single,bias-pullup = <PULL_NONE PULL_NONE PULL_NONE PULL_MASK>;
+	};
+
 	i2c_sensor_pins: i2c-sensor-pins {
 		pinctrl-single,pins = <
 			GPIO35 AF0	/* SENSOR_I2C_SCL */
