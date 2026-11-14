@@ -191,7 +191,6 @@
 			port {
 				sensor_out: endpoint {
 					remote-endpoint = <&ccic_in>;
-					bus-type = <4>;
 					clock-lanes = <0>;
 					data-lanes = <1>;
 				};
@@ -674,7 +673,6 @@
 	port {
 		ccic_in: endpoint {
 			remote-endpoint = <&sensor_out>;
-			bus-type = <4>;
 			clock-lanes = <0>;
 			data-lanes = <1>;
 		};

@@ -30,7 +30,6 @@ Example:
 		port {
 			ccic_in: endpoint {
 				remote-endpoint = <&sensor_out>;
-				bus-type = <4>;
 				clock-lanes = <0>;
 				data-lanes = <1>;
 			};
