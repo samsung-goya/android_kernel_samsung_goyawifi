@@ -89,10 +89,12 @@ struct etnaviv_event {
 
 struct etnaviv_cmdbuf_suballoc;
 struct etnaviv_cmdbuf;
+struct etnaviv_goya;
 
 #define ETNA_NR_EVENTS 30
 
 struct etnaviv_gpu {
+	struct etnaviv_goya *goya;
 	struct drm_device *drm;
 	struct thermal_cooling_device *cooling;
 	struct device *dev;

@@ -20,6 +20,13 @@
 #include "state.xml.h"
 #include "state_hi.xml.h"
 #include "cmdstream.xml.h"
+#include "etnaviv_goya.h"
+
+static bool goya_scaling(struct etnaviv_gpu *gpu)
+{
+	return IS_ENABLED(CONFIG_DRM_ETNAVIV_GOYA) &&
+	       of_machine_is_compatible("samsung,goyawifi");
+}
 
 #ifndef PHYS_OFFSET
 #define PHYS_OFFSET 0
@@ -435,6 +442,9 @@ static void etnaviv_gpu_load_clock(struct etnaviv_gpu *gpu, u32 clock)
 
 static void etnaviv_gpu_update_clock(struct etnaviv_gpu *gpu)
 {
+	if (goya_scaling(gpu))
+		return;
+
 	if (gpu->identity.minor_features2 &
 	    chipMinorFeatures2_DYNAMIC_FREQUENCY_SCALING) {
 		clk_set_rate(gpu->clk_core,
@@ -462,7 +472,8 @@ static int etnaviv_hw_reset(struct etnaviv_gpu *gpu)
 
 	while (time_is_after_jiffies(timeout)) {
 		/* enable clock */
-		unsigned int fscale = 1 << (6 - gpu->freq_scale);
+		unsigned int fscale = goya_scaling(gpu) ? 64 :
+				      (1 << (6 - gpu->freq_scale));
 		control = VIVS_HI_CLOCK_CONTROL_FSCALE_VAL(fscale);
 		etnaviv_gpu_load_clock(gpu, control);
 
@@ -792,6 +803,10 @@ int etnaviv_gpu_init(struct etnaviv_gpu *gpu)
 	gpu->exec_state = -1;
 	mutex_unlock(&gpu->lock);
 
+	ret = etnaviv_goya_init(gpu);
+	if (ret)
+		dev_warn(gpu->dev, "Samsung goya board GPU devfreq unavailable: %d\n", ret);
+
 	pm_runtime_mark_last_busy(gpu->dev);
 	pm_runtime_put_autosuspend(gpu->dev);
 
@@ -992,6 +1007,7 @@ void etnaviv_gpu_recover_hang(struct etnaviv_gpu *gpu)
 	mutex_lock(&gpu->lock);
 
 	etnaviv_hw_reset(gpu);
+	etnaviv_goya_reset(gpu);
 
 	/* complete all events, the GPU won't do it after the reset */
 	spin_lock_irqsave(&gpu->event_spinlock, flags);
@@ -1338,6 +1354,7 @@ struct dma_fence *etnaviv_gpu_submit(struct etnaviv_gem_submit *submit)
 		etnaviv_sync_point_queue(gpu, event[1]);
 	}
 
+	etnaviv_goya_busy(gpu, 1);
 	gpu->event[event[0]].fence = gpu_fence;
 	submit->cmdbuf.user_size = submit->cmdbuf.size - 8;
 	etnaviv_buffer_queue(gpu, submit->exec_state, event[0],
@@ -1455,6 +1472,7 @@ static irqreturn_t irq_handler(int irq, void *data)
 			 */
 			if (fence_after(fence->seqno, gpu->completed_fence))
 				gpu->completed_fence = fence->seqno;
+			etnaviv_goya_busy(gpu, -1);
 			dma_fence_signal(fence);
 
 			event_free(gpu, event);
@@ -1588,7 +1606,9 @@ static int
 etnaviv_gpu_cooling_get_max_state(struct thermal_cooling_device *cdev,
 				  unsigned long *state)
 {
-	*state = 6;
+	struct etnaviv_gpu *gpu = cdev->devdata;
+
+	*state = goya_scaling(gpu) ? 3 : 6;
 
 	return 0;
 }
@@ -1609,6 +1629,9 @@ etnaviv_gpu_cooling_set_cur_state(struct thermal_cooling_device *cdev,
 				  unsigned long state)
 {
 	struct etnaviv_gpu *gpu = cdev->devdata;
+
+	if (goya_scaling(gpu))
+		return etnaviv_goya_cooling(gpu, state);
 
 	mutex_lock(&gpu->lock);
 	gpu->freq_scale = state;
@@ -1694,6 +1717,7 @@ static void etnaviv_gpu_unbind(struct device *dev, struct device *master,
 
 	DBG("%s", dev_name(gpu->dev));
 
+	etnaviv_goya_fini(gpu);
 	flush_workqueue(gpu->wq);
 	destroy_workqueue(gpu->wq);
 

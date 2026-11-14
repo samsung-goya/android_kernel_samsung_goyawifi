@@ -16,4 +16,6 @@ etnaviv-y := \
 	etnaviv_perfmon.o \
 	etnaviv_sched.o
 
+etnaviv-$(CONFIG_DRM_ETNAVIV_GOYA) += etnaviv_goya.o
+
 obj-$(CONFIG_DRM_ETNAVIV)	+= etnaviv.o

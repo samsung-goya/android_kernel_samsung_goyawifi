@@ -22,3 +22,11 @@ config DRM_ETNAVIV_THERMAL
 	help
 	  Compile in support for thermal throttling.
 	  Say Y unless you want to risk burning your SoC.
+
+config DRM_ETNAVIV_GOYA
+	bool "Samsung goya board GC1000 devfreq scaling"
+	depends on DRM_ETNAVIV && PM_DEVFREQ
+	select DEVFREQ_GOV_SIMPLE_ONDEMAND
+	help
+	  Enable devfreq clock-rate scaling for the Vivante GC1000 GPU on
+	  the Samsung goya board.
