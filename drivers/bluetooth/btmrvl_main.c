@@ -19,6 +19,8 @@
  **/
 
 #include <linux/module.h>
+#include <linux/etherdevice.h>
+#include <linux/kernel.h>
 #include <linux/of.h>
 #include <net/bluetooth/bluetooth.h>
 #include <net/bluetooth/hci_core.h>
@@ -28,6 +30,15 @@
 #include "btmrvl_sdio.h"
 
 #define VERSION "1.0"
+
+/*
+ * Optional per-device provisioning, applied before the normal HCI init reads
+ * the public address. Avoids a post-registration down/reset management race.
+ */
+static char *bdaddr;
+module_param(bdaddr, charp, 0400);
+MODULE_PARM_DESC(bdaddr, "Provisioned public Bluetooth address (XX:XX:XX:XX:XX:XX)");
+static int btmrvl_set_bdaddr(struct hci_dev *hdev, const bdaddr_t *bdaddr);
 
 /*
  * This function is called by interface specific interrupt handler.
@@ -556,10 +567,29 @@ static int btmrvl_setup(struct hci_dev *hdev)
 
 	btmrvl_pscan_window_reporting(priv, 0x01);
 
+	/*
+	 * Keep the normal firmware auto-sleep policy. Forcing SD8777 awake
+	 * degraded simultaneous discovery/WLAN traffic. System host sleep is
+	 * separately controlled by the shared-card suspend callbacks.
+	 */
 	priv->btmrvl_dev.psmode = 1;
 	btmrvl_enable_ps(priv);
 
 	btmrvl_send_hscfg_cmd(priv);
+
+	if (bdaddr) {
+		bdaddr_t address;
+		u8 mac[6];
+		int i;
+
+		if (!mac_pton(bdaddr, mac) || !is_valid_ether_addr(mac))
+			return -EINVAL;
+		for (i = 0; i < 6; i++)
+			address.b[i] = mac[5 - i];
+		ret = btmrvl_set_bdaddr(hdev, &address);
+		if (ret)
+			return ret;
+	}
 
 	return 0;
 }

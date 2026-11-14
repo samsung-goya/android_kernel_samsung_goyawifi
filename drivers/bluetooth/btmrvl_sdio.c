@@ -24,6 +24,7 @@
 
 #include <linux/mmc/sdio_ids.h>
 #include <linux/mmc/sdio_func.h>
+#include <linux/mmc/card.h>
 #include <linux/module.h>
 #include <linux/devcoredump.h>
 
@@ -168,6 +169,27 @@ static const struct btmrvl_sdio_card_reg btmrvl_reg_87xx = {
 	.int_read_to_clear = false,
 };
 
+/* SD8777 uses the 87xx layout with vendor read-to-clear IRQ setup. */
+static const struct btmrvl_sdio_card_reg btmrvl_reg_8777 = {
+	.cfg = 0x00,
+	.host_int_mask = 0x02,
+	.host_intstatus = 0x03,
+	.card_status = 0x30,
+	.sq_read_base_addr_a0 = 0x40,
+	.sq_read_base_addr_a1 = 0x41,
+	.card_revision = 0x5c,
+	.card_fw_status0 = 0x60,
+	.card_fw_status1 = 0x61,
+	.card_rx_len = 0x62,
+	.card_rx_unit = 0x63,
+	.io_port_0 = 0x78,
+	.io_port_1 = 0x79,
+	.io_port_2 = 0x7a,
+	.int_read_to_clear = true,
+	.host_int_rsr = 0x01,
+	.card_misc_cfg = 0x6c,
+};
+
 static const struct btmrvl_sdio_card_reg btmrvl_reg_8887 = {
 	.cfg = 0x00,
 	.host_int_mask = 0x08,
@@ -243,6 +265,15 @@ static const struct btmrvl_sdio_device btmrvl_sdio_sd8688 = {
 	.supports_fw_dump = false,
 };
 
+static const struct btmrvl_sdio_device btmrvl_sdio_sd8777 = {
+	.helper		= NULL,
+	.firmware	= "mrvl/sd8777_uapsta.bin",
+	.reg		= &btmrvl_reg_8777,
+	.support_pscan_win_report = false,
+	.sd_blksz_fw_dl	= 256,
+	.supports_fw_dump = false,
+};
+
 static const struct btmrvl_sdio_device btmrvl_sdio_sd8787 = {
 	.helper		= NULL,
 	.firmware	= "mrvl/sd8787_uapsta.bin",
@@ -289,6 +320,9 @@ static const struct btmrvl_sdio_device btmrvl_sdio_sd8997 = {
 };
 
 static const struct sdio_device_id btmrvl_sdio_ids[] = {
+	/* Marvell SD8777 Bluetooth device (standard BT function only) */
+	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, SDIO_DEVICE_ID_MARVELL_8777_BT),
+			.driver_data = (unsigned long)&btmrvl_sdio_sd8777 },
 	/* Marvell SD8688 Bluetooth device */
 	{ SDIO_DEVICE(SDIO_VENDOR_ID_MARVELL, 0x9105),
 			.driver_data = (unsigned long)&btmrvl_sdio_sd8688 },
@@ -1140,6 +1174,18 @@ static int btmrvl_sdio_download_fw(struct btmrvl_sdio_card *card)
 		return 0;
 	}
 
+	/*
+	 * The tested SD8777 combo image is loaded by mwifiex; SD8777 ROM
+	 * download needs its own CRC header, so never use the 8787 uploader
+	 * here. Wait boundedly for WLAN's asynchronous firmware download,
+	 * releasing the SDIO host between reads.
+	 */
+	if (card->func->device == SDIO_DEVICE_ID_MARVELL_8777_BT) {
+		BT_INFO("SD8777 waiting for combined firmware from Wi-Fi");
+		return btmrvl_sdio_verify_fw_download(card, 100) ?
+		       -EPROBE_DEFER : 0;
+	}
+
 	sdio_claim_host(card->func);
 
 	/* Check if other function driver is downloading the firmware */
@@ -1494,6 +1540,49 @@ done:
 	BT_INFO("== btmrvl firmware dump to /sys/class/devcoredump end");
 }
 
+struct btmrvl_sdio_pm_link {
+	struct device *consumer;
+	struct device *supplier;
+};
+
+static void btmrvl_sdio_pm_link_release(void *data)
+{
+	struct btmrvl_sdio_pm_link *ref = data;
+
+	device_link_remove(ref->consumer, ref->supplier);
+	put_device(ref->consumer);
+}
+
+/*
+ * Order shared-firmware system PM without making WLAN probe depend on BT.
+ * WLAN must enter host sleep first, and Bluetooth must resume first.
+ */
+static int btmrvl_sdio_add_pm_link(struct sdio_func *func)
+{
+	struct sdio_func *wlan;
+	struct device_link *link;
+	struct btmrvl_sdio_pm_link *ref;
+
+	if (func->device != SDIO_DEVICE_ID_MARVELL_8777_BT)
+		return 0;
+	wlan = func->card->sdio_func[0];
+	if (!wlan || wlan->vendor != SDIO_VENDOR_ID_MARVELL ||
+	    wlan->device != SDIO_DEVICE_ID_MARVELL_8777_WLAN)
+		return -ENODEV;
+	ref = devm_kzalloc(&func->dev, sizeof(*ref), GFP_KERNEL);
+	if (!ref)
+		return -ENOMEM;
+	ref->consumer = get_device(&wlan->dev);
+	ref->supplier = &func->dev;
+	link = device_link_add(ref->consumer, ref->supplier, DL_FLAG_STATELESS);
+	if (!link) {
+		put_device(ref->consumer);
+		return -ENOMEM;
+	}
+	return devm_add_action_or_reset(&func->dev,
+					btmrvl_sdio_pm_link_release, ref);
+}
+
 static int btmrvl_sdio_probe(struct sdio_func *func,
 					const struct sdio_device_id *id)
 {
@@ -1520,6 +1609,10 @@ static int btmrvl_sdio_probe(struct sdio_func *func,
 		card->supports_fw_dump = data->supports_fw_dump;
 	}
 
+	ret = btmrvl_sdio_add_pm_link(func);
+	if (ret)
+		return ret;
+
 	if (btmrvl_sdio_register_dev(card) < 0) {
 		BT_ERR("Failed to register BT device!");
 		return -ENODEV;
@@ -1528,9 +1621,9 @@ static int btmrvl_sdio_probe(struct sdio_func *func,
 	/* Disable the interrupts on the card */
 	btmrvl_sdio_disable_host_int(card);
 
-	if (btmrvl_sdio_download_fw(card)) {
-		BT_ERR("Downloading firmware failed!");
-		ret = -ENODEV;
+	ret = btmrvl_sdio_download_fw(card);
+	if (ret) {
+		BT_ERR("Downloading firmware failed: %d", ret);
 		goto unreg_dev;
 	}
 
@@ -1757,6 +1850,7 @@ MODULE_LICENSE("GPL v2");
 MODULE_FIRMWARE("mrvl/sd8688_helper.bin");
 MODULE_FIRMWARE("mrvl/sd8688.bin");
 MODULE_FIRMWARE("mrvl/sd8787_uapsta.bin");
+MODULE_FIRMWARE("mrvl/sd8777_uapsta.bin");
 MODULE_FIRMWARE("mrvl/sd8797_uapsta.bin");
 MODULE_FIRMWARE("mrvl/sd8887_uapsta.bin");
 MODULE_FIRMWARE("mrvl/sd8897_uapsta.bin");
