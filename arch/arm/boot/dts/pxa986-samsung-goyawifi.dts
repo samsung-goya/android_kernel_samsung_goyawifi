@@ -11,6 +11,7 @@
 #include <dt-bindings/gpio/gpio.h>
 #include <dt-bindings/input/input.h>
 #include <dt-bindings/interrupt-controller/irq.h>
+#include <dt-bindings/thermal/thermal.h>
 #include "pxa988.dtsi"
 #include "pxa986-samsung-goyawifi-pins.dtsi"
 
@@ -410,7 +411,8 @@
 
 			buck1: buck1 {
 				regulator-name = "vcc_main";
-				regulator-min-microvolt = <600000>;
+				/* Shared CPU/DDR/GPU/CP floor: 1175 mV (VL2) */
+				regulator-min-microvolt = <1175000>;
 				regulator-max-microvolt = <1800000>;
 				regulator-boot-on;
 				regulator-always-on;
@@ -744,6 +746,79 @@
 					type = "critical";
 				};
 			};
+
+			cooling-maps {
+				map0 {
+					trip = <&cpu_alert0>;
+					cooling-device = <&cpu0 1 2>;
+				};
+
+				map1 {
+					trip = <&cpu_alert1>;
+					cooling-device = <&cpu0 2 THERMAL_NO_LIMIT>;
+				};
+			};
 		};
 	};
+
+	cpu_opp_table: opp-table-cpu {
+		compatible = "operating-points-v2";
+		opp-shared;
+
+		opp-312000000 {
+			opp-hz = /bits/ 64 <312000000>;
+			opp-microvolt = <1175000 1175000 1400000>;
+			clock-latency-ns = <100000>;
+		};
+
+		opp-624000000 {
+			opp-hz = /bits/ 64 <624000000>;
+			opp-microvolt = <1175000 1175000 1400000>;
+			clock-latency-ns = <100000>;
+		};
+
+		opp-1066000000 {
+			opp-hz = /bits/ 64 <1066000000>;
+			opp-microvolt = <1175000 1175000 1400000>;
+			clock-latency-ns = <100000>;
+		};
+
+		opp-1204666667 {
+			opp-hz = /bits/ 64 <1204666667>;
+			opp-microvolt = <1275000 1275000 1400000>;
+			clock-latency-ns = <100000>;
+		};
+	};
+
+	ddr_opp_table: opp-table-ddr {
+		compatible = "operating-points-v2";
+
+		opp-312000000 {
+			opp-hz = /bits/ 64 <312000000>;
+			opp-microvolt = <1175000 1175000 1400000>;
+		};
+
+		opp-533000000 {
+			opp-hz = /bits/ 64 <533000000>;
+			opp-microvolt = <1275000 1275000 1400000>;
+		};
+	};
+
+	ddr_devfreq: ddr@c0100000 {
+		compatible = "marvell,pxa988-ddr";
+		reg = <0xc0100000 0x1000>;
+		clocks = <&soc_clocks PXA988_CLK_DDR>;
+		ddr-supply = <&buck1>;
+		operating-points-v2 = <&ddr_opp_table>;
+	};
+};
+
+&cpu0 {
+	operating-points-v2 = <&cpu_opp_table>;
+	cpu-supply = <&buck1>;
+};
+
+&cpu1 {
+	operating-points-v2 = <&cpu_opp_table>;
+	cpu-supply = <&buck1>;
 };

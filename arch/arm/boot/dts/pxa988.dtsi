@@ -34,6 +34,8 @@
 			device_type = "cpu";
 			compatible = "arm,cortex-a9";
 			reg = <0>;
+			clocks = <&soc_clocks PXA988_CLK_CPU>;
+			clock-names = "cpu";
 			next-level-cache = <&L2>;
 			#cooling-cells = <2>;
 		};
@@ -42,6 +44,8 @@
 			device_type = "cpu";
 			compatible = "arm,cortex-a9";
 			reg = <1>;
+			clocks = <&soc_clocks PXA988_CLK_CPU>;
+			clock-names = "cpu";
 			next-level-cache = <&L2>;
 			#cooling-cells = <2>;
 		};
