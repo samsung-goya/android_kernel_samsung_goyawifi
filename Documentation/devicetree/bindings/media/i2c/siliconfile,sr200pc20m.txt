@@ -1,0 +1,31 @@
+Siliconfile SR200PC20M 2MP YUV Camera Sensor
+
+Required properties:
+- compatible: "siliconfile,sr200pc20m"
+- reg: I2C slave address (0x20)
+- clocks: Sensor MCLK clock specifier
+- io-enable-gpios: GPIO for 1.8V I/O and core power enable
+- analog-enable-gpios: GPIO for 2.8V analog power enable
+- standby-gpios: GPIO for sensor standby control
+- reset-gpios: GPIO for sensor reset control (active low)
+- port: OF graph port node containing an endpoint linked to the receiver.
+
+Example:
+	sensor@20 {
+		compatible = "siliconfile,sr200pc20m";
+		reg = <0x20>;
+		clocks = <&ccic>;
+		io-enable-gpios = <&gpio 79 GPIO_ACTIVE_HIGH>;
+		analog-enable-gpios = <&gpio 80 GPIO_ACTIVE_HIGH>;
+		standby-gpios = <&gpio 14 GPIO_ACTIVE_HIGH>;
+		reset-gpios = <&gpio 15 GPIO_ACTIVE_LOW>;
+
+		port {
+			sensor_out: endpoint {
+				remote-endpoint = <&ccic_in>;
+				bus-type = <4>;
+				clock-lanes = <0>;
+				data-lanes = <1>;
+			};
+		};
+	};
