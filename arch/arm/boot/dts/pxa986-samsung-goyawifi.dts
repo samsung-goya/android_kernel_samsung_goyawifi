@@ -69,7 +69,7 @@
 
 		/*
 		 * 0x06000000..0x080fffff: CP / MSA carveout (32 MiB) +
-		 * 1 MiB OBM / shared parameter page at 0x08000000.
+		 * 1 MiB OBM / shared parameter page at 0x08000000 (HW-protected).
 		 */
 		cp_reserved: cp@6000000 {
 			reg = <0x06000000 0x02100000>;
@@ -97,31 +97,13 @@
 		};
 
 		/*
-		 * 0x08180000..0x08ffffff: Remainder of vendor diagnostics /
-		 * CMSA region kept untouched during early bring-up.
-		 */
-		diag_reserved: diagnostics@8180000 {
-			reg = <0x08180000 0x00e80000>;
-			no-map;
-		};
-
-		/*
-		 * 0x17000000..0x177fffff: Bootloader scanout framebuffer (8 MiB).
-		 * Marked no-map so simplefb's ioremap_wc() succeeds on ARMv7.
-		 */
-		framebuffer_reserved: framebuffer@17000000 {
-			reg = <0x17000000 0x00800000>;
-			no-map;
-		};
-
-		/*
-		 * 64 MiB shared CMA pool in 0x20000000..0x2fffffff (lowmem) for
-		 * DRM scanout, GPU, camera, and VPU buffers.
+		 * 96 MiB shared reusable CMA pool in 0x20000000..0x2fffffff
+		 * (lowmem) for DRM scanout, GPU, camera, and VPU buffers.
 		 */
 		linux,cma {
 			compatible = "shared-dma-pool";
 			reusable;
-			size = <0x04000000>;
+			size = <0x06000000>;
 			alignment = <0x00100000>;
 			alloc-ranges = <0x20000000 0x10000000>;
 			linux,cma-default;
