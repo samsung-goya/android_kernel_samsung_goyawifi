@@ -411,6 +411,15 @@ config SA1100_WATCHDOG
 	  To compile this driver as a module, choose M here: the
 	  module will be called sa1100_wdt.
 
+config PXA988_WATCHDOG
+	tristate "Marvell PXA988/PXA986 CP timer watchdog"
+	depends on ARCH_MMP || COMPILE_TEST
+	select WATCHDOG_CORE
+	help
+	  Say Y here to include support for the Marvell PXA988/PXA986 SoC
+	  hardware watchdog timer, which triggers a warm SoC reset on hard
+	  lockups while preserving DRAM (ramoops/last_kmsg).
+
 config DW_WATCHDOG
 	tristate "Synopsys DesignWare watchdog"
 	depends on HAS_IOMEM
