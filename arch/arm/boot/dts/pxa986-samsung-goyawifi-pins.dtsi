@@ -60,6 +60,14 @@
 		pinctrl-single,low-power-mode = <LPM_DRIVE_HIGH LPM_MASK>;
 	};
 
+	accel_pins: accel-pins {
+		pinctrl-single,pins = <
+			GPIO10 AF0	/* ACC_INT */
+		>;
+		pinctrl-single,bias-pullup = <PULL_DOWN PULL_NONE PULL_DOWN PULL_MASK>;
+		pinctrl-single,low-power-mode = <LPM_FLOAT LPM_MASK>;
+	};
+
 	i2c_muic_pins: i2c-muic-pins {
 		pinctrl-single,pins = <
 			GPIO49 AF0	/* MUIC_SCL */
