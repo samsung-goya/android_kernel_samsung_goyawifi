@@ -316,6 +316,15 @@ config ARMADA_THERMAL
 	  Enable this option if you want to have support for thermal management
 	  controller present in Marvell EBU Armada SoCs (370,375,XP,38x,7K,8K).
 
+config PXA988_THERMAL
+	tristate "Marvell PXA988/PXA986 DROTS thermal sensor"
+	depends on ARCH_MMP || COMPILE_TEST
+	depends on HAS_IOMEM
+	depends on OF
+	help
+	  Enable this option to support the DROTS on-die thermal sensor
+	  present in Marvell PXA988/PXA986 SoCs.
+
 config DA9062_THERMAL
 	tristate "DA9062/DA9061 Dialog Semiconductor thermal driver"
 	depends on MFD_DA9062 || COMPILE_TEST

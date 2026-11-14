@@ -1,0 +1,15 @@
+Marvell PXA988/PXA986 DROTS Thermal Sensor
+
+Required properties:
+- compatible: must be "marvell,pxa988-thermal"
+- reg: physical base address and length of the DROTS register block
+- clocks: phandle to the PXA988 DROTS thermal clock
+- #thermal-sensor-cells: must be <0>
+
+Example:
+	thermal: thermal@d4013200 {
+		compatible = "marvell,pxa988-thermal";
+		reg = <0xd4013200 0x34>;
+		clocks = <&soc_clocks PXA988_CLK_THERMAL>;
+		#thermal-sensor-cells = <0>;
+	};
