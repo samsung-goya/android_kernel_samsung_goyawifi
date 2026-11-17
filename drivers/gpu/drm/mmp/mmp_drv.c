@@ -117,9 +117,17 @@ static void mmp_drm_release(struct drm_device *drm)
 	kfree(priv);
 }
 
+static int mmp_drm_open(struct drm_device *drm, struct drm_file *file)
+{
+	/* Allow unprivileged graphics clients (e.g. gralloc) to export PRIME fds */
+	file->authenticated = 1;
+	return 0;
+}
+
 static struct drm_driver mmp_drm_driver = {
 	.driver_features = DRIVER_MODESET | DRIVER_GEM | DRIVER_PRIME |
 			   DRIVER_ATOMIC,
+	.open = mmp_drm_open,
 	.release = mmp_drm_release,
 	.lastclose = drm_fb_helper_lastclose,
 	.fops = &mmp_drm_fops,
