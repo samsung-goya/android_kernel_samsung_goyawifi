@@ -135,7 +135,9 @@ static struct xt_match owner_mt_reg __read_mostly = {
 	.match      = owner_mt,
 	.matchsize  = sizeof(struct xt_owner_match_info),
 	.hooks      = (1 << NF_INET_LOCAL_OUT) |
-	              (1 << NF_INET_POST_ROUTING),
+	              (1 << NF_INET_POST_ROUTING) |
+	              (1 << NF_INET_LOCAL_IN) |
+	              (1 << NF_INET_PRE_ROUTING),
 	.me         = THIS_MODULE,
 };
 
