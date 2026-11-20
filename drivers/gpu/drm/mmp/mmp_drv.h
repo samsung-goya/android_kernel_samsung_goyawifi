@@ -9,10 +9,31 @@
 #include <drm/drm_encoder.h>
 #include <drm/drm_plane.h>
 
+struct mmp_plane_pending {
+	bool dirty;
+	bool enabled;
+	u32 start0;
+	u32 start1;
+	u32 pitch_yc;
+	u32 u0;
+	u32 v0;
+	u32 pitch_uv;
+	u32 ovsa;
+	u32 hpxl;
+	u32 zm;
+	u32 ctrl0_mask;
+	u32 ctrl0_set;
+	u32 sram_pdwn_mask;
+	bool update_csc;
+	u32 csc_val;
+	bool two_zoom;
+};
+
 struct mmp_plane {
 	struct drm_plane base;
 	void __iomem *regs;
 	bool is_overlay;
+	struct mmp_plane_pending pending;
 };
 
 struct mmp_lcd_hw {
@@ -43,10 +64,13 @@ struct mmp_crtc {
 	struct clk *clk_dsi_phy;
 	struct clk *clk_dsi_esc;
 
-	/* Serializes IRQ enable/ACK updates and irq_ena state. */
+	/* Serializes IRQ enable/ACK updates, irq_ena, and pending reg state. */
 	spinlock_t irq_lock;
 	u32 irq_ena;
 	struct drm_pending_vblank_event *event;
+	u32 pending_blend;
+	bool blend_dirty;
+	bool update_pending;
 	bool takeover;
 	bool clks_on;
 	bool irq_registered;
@@ -79,6 +103,7 @@ struct platform_driver;
 int mmp_plane_init(struct drm_device *drm, struct mmp_plane *plane,
 		   void __iomem *regs, unsigned int possible_crtcs,
 		   bool is_overlay);
+void mmp_plane_commit_hw_locked(struct mmp_plane *mplane);
 int mmp_crtc_init(struct drm_device *drm, struct mmp_crtc *crtc,
 		  const struct mmp_lcd_hw *hw);
 int mmp_crtc_irq_init(struct mmp_crtc *crtc);

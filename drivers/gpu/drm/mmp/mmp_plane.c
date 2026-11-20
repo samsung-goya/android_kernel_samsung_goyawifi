@@ -13,6 +13,7 @@
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_fourcc.h>
 #include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_plane_helper.h>
 
 #include "mmp_drv.h"
@@ -228,47 +229,93 @@ static int mmp_plane_atomic_check(struct drm_plane *plane,
 	return 0;
 }
 
-static void mmp_plane_program_yuv(const struct drm_plane_state *state,
-				  struct mmp_plane *mplane,
-				  const struct mmp_format_info *fmt)
+void mmp_plane_commit_hw_locked(struct mmp_plane *mplane)
 {
-	const struct drm_framebuffer *fb = state->fb;
-	unsigned int num_planes = fb->format->num_planes;
-	u32 csc;
+	const struct mmp_layer_regs *lregs = mmp_plane_layer_regs(mplane);
+	const struct mmp_plane_pending *p = &mplane->pending;
+	u32 ctrl0, para1;
 
-	if (num_planes == 3) {
-		unsigned int u = fmt->swapuv ? 2 : 1;
-		unsigned int v = fmt->swapuv ? 1 : 2;
-		dma_addr_t u_addr = mmp_plane_fb_addr(state, u);
-		dma_addr_t v_addr = mmp_plane_fb_addr(state, v);
+	if (!p->dirty)
+		return;
 
-		writel((u32)u_addr, mplane->regs + LCD_SPU_DMA_START_ADDR_U0);
-		writel((u32)u_addr, mplane->regs + LCD_SPU_DMA_START_ADDR_U1);
-		writel((u32)v_addr, mplane->regs + LCD_SPU_DMA_START_ADDR_V0);
-		writel((u32)v_addr, mplane->regs + LCD_SPU_DMA_START_ADDR_V1);
-		writel(((fb->pitches[v] & 0xffff) << 16) |
-		       (fb->pitches[u] & 0xffff),
-		       mplane->regs + LCD_SPU_DMA_PITCH_UV);
+	if (p->enabled) {
+		para1 = readl(mplane->regs + LCD_SPU_SRAM_PARA1);
+		if (para1 & p->sram_pdwn_mask) {
+			para1 &= ~p->sram_pdwn_mask;
+			writel(para1, mplane->regs + LCD_SPU_SRAM_PARA1);
+		}
+
+		writel(p->start0, mplane->regs + lregs->start0);
+		writel(p->start1, mplane->regs + lregs->start1);
+		writel(p->pitch_yc, mplane->regs + lregs->pitch);
+
+		if (mplane->is_overlay) {
+			u32 afa;
+
+			writel(p->u0, mplane->regs + LCD_SPU_DMA_START_ADDR_U0);
+			writel(p->u0, mplane->regs + LCD_SPU_DMA_START_ADDR_U1);
+			writel(p->v0, mplane->regs + LCD_SPU_DMA_START_ADDR_V0);
+			writel(p->v0, mplane->regs + LCD_SPU_DMA_START_ADDR_V1);
+			writel(p->pitch_uv, mplane->regs + LCD_SPU_DMA_PITCH_UV);
+
+			if (p->update_csc) {
+				u32 csc = readl(mplane->regs +
+						LCD_SPU_IOPAD_CONTROL);
+
+				csc &= ~CFG_CSC_MASK;
+				csc |= p->csc_val;
+				writel(csc, mplane->regs +
+				       LCD_SPU_IOPAD_CONTROL);
+			}
+
+			afa = readl(mplane->regs + LCD_AFA_ALL2ONE);
+			if (p->two_zoom)
+				afa |= AFA_DMA_TWO_ZOOM_PN;
+			else
+				afa &= ~AFA_DMA_TWO_ZOOM_PN;
+			writel(afa, mplane->regs + LCD_AFA_ALL2ONE);
+		}
+
+		writel(p->ovsa, mplane->regs + lregs->ovsa);
+		writel(p->hpxl, mplane->regs + lregs->hpxl);
+		writel(p->zm, mplane->regs + lregs->zm);
+
+		ctrl0 = readl(mplane->regs + LCD_SPU_DMA_CTRL0);
+		ctrl0 &= ~p->ctrl0_mask;
+		ctrl0 |= p->ctrl0_set;
+		writel(ctrl0, mplane->regs + LCD_SPU_DMA_CTRL0);
+	} else {
+		ctrl0 = readl(mplane->regs + LCD_SPU_DMA_CTRL0);
+		ctrl0 &= ~lregs->ena_bit;
+		writel(ctrl0, mplane->regs + LCD_SPU_DMA_CTRL0);
+
+		if (mplane->is_overlay) {
+			u32 afa = readl(mplane->regs + LCD_AFA_ALL2ONE);
+
+			afa &= ~AFA_DMA_TWO_ZOOM_PN;
+			writel(afa, mplane->regs + LCD_AFA_ALL2ONE);
+		}
+
+		writel(readl(mplane->regs + LCD_SPU_SRAM_PARA1) |
+		       p->sram_pdwn_mask,
+		       mplane->regs + LCD_SPU_SRAM_PARA1);
 	}
 
-	csc = readl(mplane->regs + LCD_SPU_IOPAD_CONTROL);
-	csc &= ~CFG_CSC_MASK;
-	csc |= CFG_CSC_RGB_COMPUTER |
-	       (state->color_encoding == DRM_COLOR_YCBCR_BT709 ?
-		CFG_CSC_YUV_CCIR709 : CFG_CSC_YUV_CCIR601);
-	writel(csc, mplane->regs + LCD_SPU_IOPAD_CONTROL);
+	mplane->pending.dirty = false;
 }
 
 static void mmp_plane_atomic_update(struct drm_plane *plane,
 				    struct drm_plane_state *old_state)
 {
 	struct mmp_plane *mplane = to_mmp_plane(plane);
+	struct mmp_crtc *mcrtc = &to_mmp_drm(plane->dev)->crtc;
 	struct drm_plane_state *state = plane->state;
 	const struct mmp_layer_regs *lregs = mmp_plane_layer_regs(mplane);
 	const struct mmp_format_info *fmt;
+	struct mmp_plane_pending p = {};
 	u32 src_w, src_h, dst_w, dst_h;
+	unsigned long flags;
 	dma_addr_t paddr;
-	u32 ctrl0, para1, pdwn_mask;
 
 	if (!state->crtc || !state->fb || !state->visible)
 		return;
@@ -277,92 +324,82 @@ static void mmp_plane_atomic_update(struct drm_plane *plane,
 	if (!fmt)
 		return;
 
-	pdwn_mask = mplane->is_overlay ? (CFG_PDWN16x66 | CFG_PDWN32x66) :
-					 CFG_PDWN64x66;
-	para1 = readl(mplane->regs + LCD_SPU_SRAM_PARA1);
-	if (para1 & pdwn_mask) {
-		para1 &= ~pdwn_mask;
-		writel(para1, mplane->regs + LCD_SPU_SRAM_PARA1);
-	}
-
 	paddr = mmp_plane_fb_addr(state, 0);
 	src_w = drm_rect_width(&state->src) >> 16;
 	src_h = drm_rect_height(&state->src) >> 16;
 	dst_w = drm_rect_width(&state->dst);
 	dst_h = drm_rect_height(&state->dst);
 
+	p.dirty = true;
+	p.enabled = true;
+	p.sram_pdwn_mask = mplane->is_overlay ?
+			   (CFG_PDWN16x66 | CFG_PDWN32x66) : CFG_PDWN64x66;
+	p.start0 = (u32)paddr;
+	p.start1 = (u32)paddr;
+	p.pitch_yc = state->fb->pitches[0] & 0xffff;
+
+	if (mplane->is_overlay) {
+		if (state->fb->format->num_planes == 3) {
+			unsigned int u = fmt->swapuv ? 2 : 1;
+			unsigned int v = fmt->swapuv ? 1 : 2;
+
+			p.u0 = (u32)mmp_plane_fb_addr(state, u);
+			p.v0 = (u32)mmp_plane_fb_addr(state, v);
+			p.pitch_uv = ((state->fb->pitches[v] & 0xffff) << 16) |
+				     (state->fb->pitches[u] & 0xffff);
+		}
+		if (fmt->yuv2rgb) {
+			p.update_csc = true;
+			p.csc_val = CFG_CSC_RGB_COMPUTER |
+				    (state->color_encoding ==
+				     DRM_COLOR_YCBCR_BT709 ?
+				     CFG_CSC_YUV_CCIR709 :
+				     CFG_CSC_YUV_CCIR601);
+		}
+		p.two_zoom = !(src_w & 0x1) && ((src_w >> 1) >= dst_w);
+	}
+
+	p.ovsa = ((state->dst.y1 & 0xfff) << 16) | (state->dst.x1 & 0xfff);
+	p.hpxl = ((src_h & 0xfff) << 16) | (src_w & 0xfff);
+	p.zm = ((dst_h & 0xfff) << 16) | (dst_w & 0xfff);
+
+	p.ctrl0_mask = lregs->ctrl0_mask | CFG_NOBLENDING | CFG_CBSH_ENA |
+		       CFG_PALETTE_ENA;
+	p.ctrl0_set = CFG_ARBFAST_ENA | lregs->ena_bit | lregs->hsmooth_bit |
+		      ((u32)fmt->hw_fmt << lregs->fmt_shift);
+	if (fmt->swaprb)
+		p.ctrl0_set |= lregs->swaprb_bit;
+	if (fmt->swapuv && state->fb->format->num_planes == 1)
+		p.ctrl0_set |= lregs->swapuv_bit;
+	if (fmt->swapyu)
+		p.ctrl0_set |= lregs->swapyu_bit;
+	if (fmt->yuv2rgb)
+		p.ctrl0_set |= lregs->yuv2rgb_bit;
+
 	/* Ensure framebuffer writes hit RAM before LCDC DMA reads them. */
 	dma_wmb();
 
-	writel((u32)paddr, mplane->regs + lregs->start0);
-	writel((u32)paddr, mplane->regs + lregs->start1);
-	writel(state->fb->pitches[0] & 0xffff, mplane->regs + lregs->pitch);
-	if (mplane->is_overlay) {
-		if (state->fb->format->num_planes == 1) {
-			writel(0, mplane->regs + LCD_SPU_DMA_START_ADDR_U0);
-			writel(0, mplane->regs + LCD_SPU_DMA_START_ADDR_U1);
-			writel(0, mplane->regs + LCD_SPU_DMA_START_ADDR_V0);
-			writel(0, mplane->regs + LCD_SPU_DMA_START_ADDR_V1);
-			writel(0, mplane->regs + LCD_SPU_DMA_PITCH_UV);
-		}
-		if (fmt->yuv2rgb)
-			mmp_plane_program_yuv(state, mplane, fmt);
-	}
-	writel(((state->dst.y1 & 0xfff) << 16) | (state->dst.x1 & 0xfff),
-	       mplane->regs + lregs->ovsa);
-	writel(((src_h & 0xfff) << 16) | (src_w & 0xfff),
-	       mplane->regs + lregs->hpxl);
-	writel(((dst_h & 0xfff) << 16) | (dst_w & 0xfff),
-	       mplane->regs + lregs->zm);
-
-	if (mplane->is_overlay) {
-		u32 afa = readl(mplane->regs + LCD_AFA_ALL2ONE);
-
-		if (!(src_w & 0x1) && ((src_w >> 1) >= dst_w))
-			afa |= AFA_DMA_TWO_ZOOM_PN;
-		else
-			afa &= ~AFA_DMA_TWO_ZOOM_PN;
-		writel(afa, mplane->regs + LCD_AFA_ALL2ONE);
-	}
-
-	ctrl0 = readl(mplane->regs + LCD_SPU_DMA_CTRL0);
-	ctrl0 &= ~(lregs->ctrl0_mask | CFG_NOBLENDING | CFG_CBSH_ENA |
-		   CFG_PALETTE_ENA);
-	ctrl0 |= CFG_ARBFAST_ENA | lregs->ena_bit | lregs->hsmooth_bit |
-		 ((u32)fmt->hw_fmt << lregs->fmt_shift);
-	if (fmt->swaprb)
-		ctrl0 |= lregs->swaprb_bit;
-	if (fmt->swapuv && state->fb->format->num_planes == 1)
-		ctrl0 |= lregs->swapuv_bit;
-	if (fmt->swapyu)
-		ctrl0 |= lregs->swapyu_bit;
-	if (fmt->yuv2rgb)
-		ctrl0 |= lregs->yuv2rgb_bit;
-	writel(ctrl0, mplane->regs + LCD_SPU_DMA_CTRL0);
+	spin_lock_irqsave(&mcrtc->irq_lock, flags);
+	mplane->pending = p;
+	spin_unlock_irqrestore(&mcrtc->irq_lock, flags);
 }
 
 static void mmp_plane_atomic_disable(struct drm_plane *plane,
 				     struct drm_plane_state *old_state)
 {
 	struct mmp_plane *mplane = to_mmp_plane(plane);
-	const struct mmp_layer_regs *lregs = mmp_plane_layer_regs(mplane);
-	u32 ctrl0;
+	struct mmp_crtc *mcrtc = &to_mmp_drm(plane->dev)->crtc;
+	struct mmp_plane_pending p = {};
+	unsigned long flags;
 
-	ctrl0 = readl(mplane->regs + LCD_SPU_DMA_CTRL0);
-	ctrl0 &= ~lregs->ena_bit;
-	writel(ctrl0, mplane->regs + LCD_SPU_DMA_CTRL0);
+	p.dirty = true;
+	p.enabled = false;
+	p.sram_pdwn_mask = mplane->is_overlay ?
+			   (CFG_PDWN16x66 | CFG_PDWN32x66) : CFG_PDWN64x66;
 
-	if (mplane->is_overlay) {
-		u32 afa = readl(mplane->regs + LCD_AFA_ALL2ONE);
-
-		afa &= ~AFA_DMA_TWO_ZOOM_PN;
-		writel(afa, mplane->regs + LCD_AFA_ALL2ONE);
-	}
-
-	writel(readl(mplane->regs + LCD_SPU_SRAM_PARA1) |
-	       (mplane->is_overlay ? (CFG_PDWN16x66 | CFG_PDWN32x66) :
-				     CFG_PDWN64x66),
-	       mplane->regs + LCD_SPU_SRAM_PARA1);
+	spin_lock_irqsave(&mcrtc->irq_lock, flags);
+	mplane->pending = p;
+	spin_unlock_irqrestore(&mcrtc->irq_lock, flags);
 }
 
 static void mmp_plane_reset(struct drm_plane *plane)
@@ -382,6 +419,7 @@ static void mmp_plane_reset(struct drm_plane *plane)
 }
 
 static const struct drm_plane_helper_funcs mmp_plane_helper_funcs = {
+	.prepare_fb = drm_gem_fb_prepare_fb,
 	.atomic_check = mmp_plane_atomic_check,
 	.atomic_update = mmp_plane_atomic_update,
 	.atomic_disable = mmp_plane_atomic_disable,

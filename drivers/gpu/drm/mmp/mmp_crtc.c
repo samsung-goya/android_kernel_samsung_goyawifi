@@ -202,20 +202,33 @@ static void mmp_crtc_atomic_disable(struct drm_crtc *crtc,
 {
 	struct mmp_crtc *mcrtc = to_mmp_crtc(crtc);
 	unsigned long flags;
-
-	drm_crtc_vblank_off(crtc);
+	bool put_vblank = false;
 
 	spin_lock_irqsave(&mcrtc->irq_lock, flags);
-	mcrtc->irq_ena &= ~MMP_ERR_IRQS;
+	mcrtc->update_pending = false;
+	mcrtc->primary.pending.dirty = false;
+	mcrtc->overlay.pending.dirty = false;
+	mcrtc->blend_dirty = false;
+	mcrtc->irq_ena &= ~(MMP_ERR_IRQS | DUMB_FRAMEDONE);
 	writel(mcrtc->irq_ena, mcrtc->regs + LCD_SPU_IRQ_ENA);
 	spin_unlock_irqrestore(&mcrtc->irq_lock, flags);
 
 	spin_lock_irqsave(&crtc->dev->event_lock, flags);
+	if (mcrtc->event) {
+		drm_crtc_send_vblank_event(crtc, mcrtc->event);
+		mcrtc->event = NULL;
+		put_vblank = true;
+	}
 	if (crtc->state->event) {
 		drm_crtc_send_vblank_event(crtc, crtc->state->event);
 		crtc->state->event = NULL;
 	}
 	spin_unlock_irqrestore(&crtc->dev->event_lock, flags);
+
+	if (put_vblank)
+		drm_crtc_vblank_put(crtc);
+
+	drm_crtc_vblank_off(crtc);
 
 	if (!mcrtc->takeover) {
 		u32 dumb = readl(mcrtc->regs + LCD_SPU_DUMB_CTRL);
@@ -231,7 +244,7 @@ static void mmp_crtc_atomic_disable(struct drm_crtc *crtc,
 	}
 }
 
-static void mmp_crtc_update_blending(struct mmp_crtc *mcrtc)
+static u32 mmp_crtc_calc_blending(struct mmp_crtc *mcrtc)
 {
 	struct drm_crtc *crtc = &mcrtc->base;
 	struct drm_plane_state *gra_state = mcrtc->primary.base.state;
@@ -246,26 +259,33 @@ static void mmp_crtc_update_blending(struct mmp_crtc *mcrtc)
 			    gra_state->fb->format->has_alpha;
 	bool dma_px_alpha = dma_vis && dma_state->fb &&
 			    dma_state->fb->format->has_alpha;
-	u32 ctrl1, blend;
 
 	if (gra_vis) {
 		if (gra_px_alpha && gra_alpha == 0xff)
-			blend = CFG_ALPHAM_GRA | CFG_ALPHA(0x00);
-		else
-			blend = CFG_ALPHAM_CFG | CFG_ALPHA(255 - gra_alpha);
-	} else if (dma_vis) {
-		if (dma_px_alpha && dma_alpha == 0xff)
-			blend = CFG_ALPHAM_VIDEO | CFG_ALPHA(0xff);
-		else
-			blend = CFG_ALPHAM_CFG | CFG_ALPHA(dma_alpha);
-	} else {
-		blend = CFG_ALPHAM_CFG | CFG_ALPHA(0x00);
+			return CFG_ALPHAM_GRA | CFG_ALPHA(0x00);
+		return CFG_ALPHAM_CFG | CFG_ALPHA(255 - gra_alpha);
 	}
+	if (dma_vis) {
+		if (dma_px_alpha && dma_alpha == 0xff)
+			return CFG_ALPHAM_VIDEO | CFG_ALPHA(0xff);
+		return CFG_ALPHAM_CFG | CFG_ALPHA(dma_alpha);
+	}
+	return CFG_ALPHAM_CFG | CFG_ALPHA(0x00);
+}
 
-	ctrl1 = readl(mcrtc->regs + LCD_SPU_DMA_CTRL1);
-	ctrl1 &= ~(CFG_ALPHA_MODE_MASK | CFG_ALPHA_MASK);
-	ctrl1 |= blend;
-	writel(ctrl1, mcrtc->regs + LCD_SPU_DMA_CTRL1);
+static void mmp_crtc_apply_pending_locked(struct mmp_crtc *mcrtc)
+{
+	mmp_plane_commit_hw_locked(&mcrtc->overlay);
+	mmp_plane_commit_hw_locked(&mcrtc->primary);
+
+	if (mcrtc->blend_dirty) {
+		u32 ctrl1 = readl(mcrtc->regs + LCD_SPU_DMA_CTRL1);
+
+		ctrl1 &= ~(CFG_ALPHA_MODE_MASK | CFG_ALPHA_MASK);
+		ctrl1 |= mcrtc->pending_blend;
+		writel(ctrl1, mcrtc->regs + LCD_SPU_DMA_CTRL1);
+		mcrtc->blend_dirty = false;
+	}
 }
 
 static void mmp_crtc_update_gamma(struct mmp_crtc *mcrtc,
@@ -318,27 +338,62 @@ static void mmp_crtc_atomic_flush(struct drm_crtc *crtc,
 {
 	struct mmp_crtc *mcrtc = to_mmp_crtc(crtc);
 	struct drm_pending_vblank_event *event = crtc->state->event;
+	bool needs_modeset = drm_atomic_crtc_needs_modeset(crtc->state);
+	bool vblank_ok = false;
 	unsigned long flags;
-
-	if (crtc->state->active) {
-		mmp_crtc_update_blending(mcrtc);
-		if (crtc->state->color_mgmt_changed ||
-		    (drm_atomic_crtc_needs_modeset(crtc->state) &&
-		     crtc->state->gamma_lut))
-			mmp_crtc_update_gamma(mcrtc, crtc->state);
-	}
-
-	if (!event)
-		return;
+	u32 blend = 0;
 
 	crtc->state->event = NULL;
 
-	spin_lock_irqsave(&crtc->dev->event_lock, flags);
-	if (drm_crtc_vblank_get(crtc) == 0)
-		mcrtc->event = event;
-	else
+	if (!crtc->state->active) {
+		if (event) {
+			spin_lock_irqsave(&crtc->dev->event_lock, flags);
+			drm_crtc_send_vblank_event(crtc, event);
+			spin_unlock_irqrestore(&crtc->dev->event_lock, flags);
+		}
+		return;
+	}
+
+	blend = mmp_crtc_calc_blending(mcrtc);
+
+	if (crtc->state->color_mgmt_changed ||
+	    (needs_modeset && crtc->state->gamma_lut))
+		mmp_crtc_update_gamma(mcrtc, crtc->state);
+
+	if (event) {
+		vblank_ok = (drm_crtc_vblank_get(crtc) == 0);
+		if (vblank_ok) {
+			spin_lock_irqsave(&crtc->dev->event_lock, flags);
+			mcrtc->event = event;
+			spin_unlock_irqrestore(&crtc->dev->event_lock, flags);
+		}
+	}
+
+	spin_lock_irqsave(&mcrtc->irq_lock, flags);
+	mcrtc->pending_blend = blend;
+	mcrtc->blend_dirty = true;
+
+	if (needs_modeset || mcrtc->takeover || (event && !vblank_ok)) {
+		mmp_crtc_apply_pending_locked(mcrtc);
+		mcrtc->update_pending = false;
+	} else {
+		/*
+		 * Defer plane and blending register writes to DUMB_FRAMEDONE
+		 * (start of vertical front porch right after line 599) so all
+		 * layer registers latch atomically during vertical blanking.
+		 */
+		mcrtc->update_pending = true;
+		writel(~DUMB_FRAMEDONE, mcrtc->regs + LCD_SPU_IRQ_ISR);
+		mcrtc->irq_ena |= DUMB_FRAMEDONE;
+		writel(mcrtc->irq_ena, mcrtc->regs + LCD_SPU_IRQ_ENA);
+	}
+	spin_unlock_irqrestore(&mcrtc->irq_lock, flags);
+
+	if (event && !vblank_ok) {
+		spin_lock_irqsave(&crtc->dev->event_lock, flags);
 		drm_crtc_send_vblank_event(crtc, event);
-	spin_unlock_irqrestore(&crtc->dev->event_lock, flags);
+		spin_unlock_irqrestore(&crtc->dev->event_lock, flags);
+	}
 }
 
 static int mmp_crtc_enable_vblank(struct drm_crtc *crtc)
@@ -371,6 +426,8 @@ static irqreturn_t mmp_crtc_irq(int irq, void *data)
 {
 	struct mmp_crtc *mcrtc = data;
 	struct drm_crtc *crtc = &mcrtc->base;
+	bool flushed_now = false;
+	bool ready_for_event;
 	u32 stat, handled;
 	unsigned long flags;
 
@@ -380,6 +437,15 @@ static irqreturn_t mmp_crtc_irq(int irq, void *data)
 	handled = stat & mcrtc->irq_ena;
 	if (handled)
 		writel(~handled, mcrtc->regs + LCD_SPU_IRQ_ISR);
+
+	if ((handled & DUMB_FRAMEDONE) && mcrtc->update_pending) {
+		mmp_crtc_apply_pending_locked(mcrtc);
+		mcrtc->update_pending = false;
+		mcrtc->irq_ena &= ~DUMB_FRAMEDONE;
+		writel(mcrtc->irq_ena, mcrtc->regs + LCD_SPU_IRQ_ENA);
+		flushed_now = true;
+	}
+	ready_for_event = !mcrtc->update_pending && !flushed_now;
 	spin_unlock_irqrestore(&mcrtc->irq_lock, flags);
 
 	if (!handled)
@@ -395,15 +461,22 @@ static irqreturn_t mmp_crtc_irq(int irq, void *data)
 				     !!(handled & AXI_LATENCY_TOO_LONG_IRQ));
 
 	if (handled & VSYNC_IRQ) {
+		bool put_vblank = false;
+
 		drm_crtc_handle_vblank(crtc);
 
-		spin_lock_irqsave(&crtc->dev->event_lock, flags);
-		if (mcrtc->event) {
-			drm_crtc_send_vblank_event(crtc, mcrtc->event);
-			mcrtc->event = NULL;
-			drm_crtc_vblank_put(crtc);
+		if (ready_for_event) {
+			spin_lock_irqsave(&crtc->dev->event_lock, flags);
+			if (mcrtc->event) {
+				drm_crtc_send_vblank_event(crtc, mcrtc->event);
+				mcrtc->event = NULL;
+				put_vblank = true;
+			}
+			spin_unlock_irqrestore(&crtc->dev->event_lock, flags);
+
+			if (put_vblank)
+				drm_crtc_vblank_put(crtc);
 		}
-		spin_unlock_irqrestore(&crtc->dev->event_lock, flags);
 	}
 
 	return IRQ_HANDLED;
@@ -489,6 +562,17 @@ int mmp_crtc_irq_init(struct mmp_crtc *mcrtc)
 	}
 	writel(0, mcrtc->regs + LCD_SPU_IRQ_ENA);
 	writel(0, mcrtc->regs + LCD_SPU_IRQ_ISR);
+
+	if (!mcrtc->takeover) {
+		u32 dumb = readl(mcrtc->regs + LCD_SPU_DUMB_CTRL);
+		u32 sclk = readl(mcrtc->regs + LCD_CFG_SCLK_DIV);
+
+		dumb &= ~CFG_DUMB_ENA;
+		writel(dumb, mcrtc->regs + LCD_SPU_DUMB_CTRL);
+
+		sclk |= SCLK_DISABLE;
+		writel(sclk, mcrtc->regs + LCD_CFG_SCLK_DIV);
+	}
 
 	ret = request_irq(mcrtc->irq, mmp_crtc_irq, 0, "mmp-lcdc", mcrtc);
 	if (!ret)
