@@ -127,6 +127,22 @@ static inline struct vx5b3d *bridge_to_vx5b3d(struct drm_bridge *bridge)
 	return container_of(bridge, struct vx5b3d, bridge);
 }
 
+static int vx5b3d_dsi_prepare_lp(struct vx5b3d *vx)
+{
+	const struct mipi_dsi_host_ops *ops = vx->dsi->host->ops;
+	struct mipi_dsi_msg msg = {
+		.channel = vx->dsi->channel,
+		.flags = MIPI_DSI_MSG_USE_LPM,
+	};
+	ssize_t ret;
+
+	if (!ops || !ops->transfer)
+		return -EOPNOTSUPP;
+
+	ret = ops->transfer(vx->dsi->host, &msg);
+	return ret < 0 ? (int)ret : 0;
+}
+
 static int vx5b3d_dsi_write_reg(struct vx5b3d *vx, u16 reg, u32 val)
 {
 	u8 buf[9] = {
@@ -244,7 +260,6 @@ static int vx5b3d_apply_backlight(struct vx5b3d *vx, int brightness)
 	int ret;
 
 	if (duty) {
-		gpiod_set_value_cansleep(vx->led_en_gpio, 1);
 		ret = vx5b3d_i2c_write_reg(vx, VX5B3D_REG_PWM_CTRL, 0x3fff0000);
 		if (ret)
 			return ret;
@@ -254,14 +269,15 @@ static int vx5b3d_apply_backlight(struct vx5b3d *vx, int brightness)
 		ret = vx5b3d_i2c_write_reg(vx, VX5B3D_REG_PWM_EN, 5);
 		if (ret)
 			return ret;
+		gpiod_set_value_cansleep(vx->led_en_gpio, 1);
 	} else {
+		gpiod_set_value_cansleep(vx->led_en_gpio, 0);
 		ret = vx5b3d_i2c_write_reg(vx, VX5B3D_REG_PWM_DUTY, 0);
 		if (ret)
 			return ret;
 		ret = vx5b3d_i2c_write_reg(vx, VX5B3D_REG_PWM_EN, 0);
 		if (ret)
 			return ret;
-		gpiod_set_value_cansleep(vx->led_en_gpio, 0);
 	}
 
 	return 0;
@@ -301,39 +317,80 @@ static int vx5b3d_bridge_attach(struct drm_bridge *bridge)
 static void vx5b3d_bridge_pre_enable(struct drm_bridge *bridge)
 {
 	struct vx5b3d *vx = bridge_to_vx5b3d(bridge);
-	int ret;
+	int try, i2c_try, ret = 0;
 
 	mutex_lock(&vx->lock);
 
-	gpiod_set_value_cansleep(vx->pwr_en_gpio, 1);
-	usleep_range(10000, 12000);
-	gpiod_set_value_cansleep(vx->reset_gpio, 1);
-	usleep_range(1000, 2000);
-	gpiod_set_value_cansleep(vx->reset_gpio, 0);
-	msleep(32);
+	/* Keep WLED boost off while bridge is reset and re-initialized. */
+	gpiod_set_value_cansleep(vx->led_en_gpio, 0);
 
-	ret = vx5b3d_dsi_write_seq(vx, vx5b3d_init_pll1,
-				   ARRAY_SIZE(vx5b3d_init_pll1));
-	if (ret)
-		goto err_dsi;
-	usleep_range(1500, 2500);
+	for (try = 0; try < 3; try++) {
+		if (try > 0) {
+			gpiod_set_value_cansleep(vx->reset_gpio, 1);
+			gpiod_set_value_cansleep(vx->pwr_en_gpio, 0);
+			msleep(20);
+		}
 
-	ret = vx5b3d_dsi_write_seq(vx, vx5b3d_init_pll2,
-				   ARRAY_SIZE(vx5b3d_init_pll2));
-	if (ret)
-		goto err_dsi;
-	usleep_range(1500, 2500);
+		/*
+		 * Place DSI host into clean 1-lane LP-11 stop state before
+		 * releasing VX5B3D reset so the bridge D-PHY receiver never
+		 * wakes into active HS video or an unpowered D-PHY transition.
+		 */
+		ret = vx5b3d_dsi_prepare_lp(vx);
+		if (ret)
+			continue;
 
-	ret = vx5b3d_dsi_write_seq(vx, vx5b3d_init_video,
-				   ARRAY_SIZE(vx5b3d_init_video));
-	if (ret)
-		goto err_dsi;
-	usleep_range(10000, 12000);
+		gpiod_set_value_cansleep(vx->pwr_en_gpio, 1);
+		usleep_range(10000, 12000);
+		gpiod_set_value_cansleep(vx->reset_gpio, 1);
+		usleep_range(2000, 3000);
+		gpiod_set_value_cansleep(vx->reset_gpio, 0);
+		msleep(32);
 
-	mutex_unlock(&vx->lock);
-	return;
+		ret = vx5b3d_dsi_write_seq(vx, vx5b3d_init_pll1,
+					   ARRAY_SIZE(vx5b3d_init_pll1));
+		if (ret)
+			continue;
+		usleep_range(1500, 2500);
 
-err_dsi:
+		ret = vx5b3d_dsi_write_seq(vx, vx5b3d_init_pll2,
+					   ARRAY_SIZE(vx5b3d_init_pll2));
+		if (ret)
+			continue;
+		usleep_range(1500, 2500);
+
+		ret = vx5b3d_dsi_write_seq(vx, vx5b3d_init_video,
+					   ARRAY_SIZE(vx5b3d_init_video));
+		if (ret)
+			continue;
+		usleep_range(10000, 12000);
+
+		/*
+		 * Verify the bridge PLL and CSR interface are alive on I2C
+		 * while DSI is still in 1-lane LP command mode; if the bridge
+		 * NACKs, power-cycle and retry the LP init sequence now.
+		 */
+		for (i2c_try = 0; i2c_try < 3; i2c_try++) {
+			ret = vx5b3d_i2c_write_reg(vx, VX5B3D_REG_LVDS_TX_CTRL,
+						   VX5B3D_LVDS_TX_DISABLE);
+			if (!ret)
+				break;
+			usleep_range(3000, 4000);
+		}
+		if (!ret) {
+			if (try > 0)
+				dev_info(vx->dev,
+					 "DSI/I2C init succeeded on retry %d\n",
+					 try);
+			mutex_unlock(&vx->lock);
+			return;
+		}
+
+		dev_warn(vx->dev,
+			 "bridge I2C not ready after DSI init (try %d: %d), retrying\n",
+			 try + 1, ret);
+	}
+
 	dev_err(vx->dev, "DSI initialization failed: %d\n", ret);
 	mutex_unlock(&vx->lock);
 }
@@ -509,16 +566,14 @@ static int vx5b3d_probe(struct i2c_client *client,
 	if (IS_ERR(vx->vdd18))
 		return PTR_ERR(vx->vdd18);
 
-	vx->pwr_en_gpio = devm_gpiod_get_optional(dev, "enable", GPIOD_OUT_HIGH);
-	if (IS_ERR(vx->pwr_en_gpio))
-		return PTR_ERR(vx->pwr_en_gpio);
-
-	vx->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_LOW);
-	if (IS_ERR(vx->reset_gpio))
-		return PTR_ERR(vx->reset_gpio);
-
+	/*
+	 * Extinguish the WLED backlight first while the bootloader's LVDS
+	 * clock is still active so the panel does not flash white when LVDS
+	 * TX stops, then place VX5B3D into reset with 3.3V off to match the
+	 * post_disable() state before the first DRM atomic modeset.
+	 */
 	vx->led_en_gpio = devm_gpiod_get_optional(dev, "backlight-enable",
-						  GPIOD_OUT_HIGH);
+						  GPIOD_OUT_LOW);
 	if (IS_ERR(vx->led_en_gpio))
 		return PTR_ERR(vx->led_en_gpio);
 
@@ -535,6 +590,16 @@ static int vx5b3d_probe(struct i2c_client *client,
 	ret = devm_add_action_or_reset(dev, vx5b3d_disable_regulators, vx);
 	if (ret)
 		return ret;
+
+	msleep(30);
+
+	vx->reset_gpio = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(vx->reset_gpio))
+		return PTR_ERR(vx->reset_gpio);
+
+	vx->pwr_en_gpio = devm_gpiod_get_optional(dev, "enable", GPIOD_OUT_LOW);
+	if (IS_ERR(vx->pwr_en_gpio))
+		return PTR_ERR(vx->pwr_en_gpio);
 
 	bl_props.type = BACKLIGHT_RAW;
 	bl_props.max_brightness = VX5B3D_MAX_BRIGHTNESS;

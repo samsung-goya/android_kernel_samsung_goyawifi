@@ -371,6 +371,14 @@ static ssize_t mmp_dsi_host_transfer(struct mipi_dsi_host *host,
 	u32 cmd0, wc, val;
 	ssize_t ret;
 
+	if (!msg->tx_len && !msg->rx_len) {
+		mutex_lock(&mdsi->tx_mutex);
+		mmp_dsi_power_off(mdsi);
+		ret = mmp_dsi_ensure_lp(mdsi);
+		mutex_unlock(&mdsi->tx_mutex);
+		return ret;
+	}
+
 	ret = mipi_dsi_create_packet(&pkt, msg);
 	if (ret)
 		return ret;
@@ -559,6 +567,26 @@ static int mmp_dsi_bind(struct device *dev, struct device *master, void *data)
 	ret = drm_of_find_panel_or_bridge(dev->of_node, 1, 0, &panel, &bridge);
 	if (ret)
 		return ret;
+
+	/*
+	 * Quiesce any bootloader-configured 4-lane HS DSI stream so the
+	 * downstream bridge starts from a quiet D-PHY before pre_enable().
+	 */
+	mutex_lock(&mdsi->tx_mutex);
+	if (!clk_prepare_enable(mdsi->clk_dsi_esc)) {
+		if (!clk_prepare_enable(mdsi->clk_dsi_phy)) {
+			writel(0, mdsi->regs + DSI_CTRL_0);
+			(void)readl(mdsi->regs + DSI_CTRL_0);
+			writel(0, mdsi->regs + DSI_PHY_CTRL_2);
+			writel(0, mdsi->regs + DSI_PHY_CTRL_1);
+			clk_disable_unprepare(mdsi->clk_dsi_phy);
+		}
+		clk_disable_unprepare(mdsi->clk_dsi_esc);
+	}
+	mdsi->video_enabled = false;
+	mdsi->lp_ready = false;
+	mdsi->active_lanes = 0;
+	mutex_unlock(&mdsi->tx_mutex);
 
 	if (panel) {
 		bridge = drm_panel_bridge_add(panel, DRM_MODE_CONNECTOR_DSI);
