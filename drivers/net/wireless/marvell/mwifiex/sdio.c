@@ -193,11 +193,11 @@ static int mwifiex_sdio_resume(struct device *dev)
 
 	clear_bit(MWIFIEX_IS_SUSPENDED, &adapter->work_flags);
 
+	mwifiex_disable_wake(adapter);
+
 	/* Disable Host Sleep */
 	mwifiex_cancel_hs(mwifiex_get_priv(adapter, MWIFIEX_BSS_ROLE_STA),
 			  MWIFIEX_SYNC_CMD);
-
-	mwifiex_disable_wake(adapter);
 
 	return 0;
 }
@@ -448,16 +448,15 @@ static int mwifiex_sdio_suspend(struct device *dev)
 		return 0;
 	}
 
-	mwifiex_enable_wake(adapter);
-
 	/* Enable the Host Sleep */
 	if (!mwifiex_enable_hs(adapter)) {
 		mwifiex_dbg(adapter, ERROR,
 			    "cmd: failed to suspend\n");
 		clear_bit(MWIFIEX_IS_HS_ENABLING, &adapter->work_flags);
-		mwifiex_disable_wake(adapter);
 		return -EFAULT;
 	}
+
+	mwifiex_enable_wake(adapter);
 
 	mwifiex_dbg(adapter, INFO,
 		    "cmd: suspend with MMC_PM_KEEP_POWER\n");

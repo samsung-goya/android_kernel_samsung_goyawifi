@@ -2299,6 +2299,10 @@ int mwifiex_sta_init_cmd(struct mwifiex_private *priv, u8 first_sta, bool init)
 						 &data) == 0) {
 				pr_debug("Wakeup pin = 0x%x\n", data);
 				adapter->hs_cfg.gpio = data;
+				if (adapter->hs_cfg.conditions ==
+				    cpu_to_le32(HS_CFG_COND_DEF))
+					adapter->hs_cfg.conditions =
+						cpu_to_le32(HS_CFG_COND_UNICAST_DATA);
 			}
 
 			mwifiex_dnld_dt_cfgdata(priv, adapter->dt_node,

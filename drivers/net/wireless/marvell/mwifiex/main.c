@@ -17,6 +17,7 @@
  * this warranty disclaimer.
  */
 
+#include <linux/irq.h>
 #include <linux/suspend.h>
 
 #include "main.h"
@@ -1583,7 +1584,7 @@ static irqreturn_t mwifiex_irq_wakeup_handler(int irq, void *priv)
 	disable_irq_nosync(irq);
 
 	/* Notify PM core we are wakeup source */
-	pm_wakeup_event(adapter->dev, 0);
+	pm_wakeup_event(adapter->dev, 1000);
 	pm_system_wakeup();
 
 	return IRQ_HANDLED;
@@ -1592,6 +1593,7 @@ static irqreturn_t mwifiex_irq_wakeup_handler(int irq, void *priv)
 static void mwifiex_probe_of(struct mwifiex_adapter *adapter)
 {
 	int ret;
+	unsigned long irq_flags;
 	struct device *dev = adapter->dev;
 
 	if (!dev->of_node)
@@ -1604,8 +1606,10 @@ static void mwifiex_probe_of(struct mwifiex_adapter *adapter)
 		goto err_exit;
 	}
 
+	irq_flags = irq_get_trigger_type(adapter->irq_wakeup);
+
 	ret = devm_request_irq(dev, adapter->irq_wakeup,
-			       mwifiex_irq_wakeup_handler, IRQF_TRIGGER_LOW,
+			       mwifiex_irq_wakeup_handler, irq_flags,
 			       "wifi_wake", adapter);
 	if (ret) {
 		dev_err(dev, "Failed to request irq_wakeup %d (%d)\n",

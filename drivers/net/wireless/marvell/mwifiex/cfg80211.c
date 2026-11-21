@@ -3449,14 +3449,19 @@ static int mwifiex_cfg80211_suspend(struct wiphy *wiphy,
 		goto done;
 	}
 
-	ret = mwifiex_set_mef_filter(sta_priv, wowlan);
-	if (ret) {
-		mwifiex_dbg(adapter, ERROR, "Failed to set MEF filter\n");
-		goto done;
+	if (!wowlan->any || wowlan->n_patterns || wowlan->magic_pkt) {
+		ret = mwifiex_set_mef_filter(sta_priv, wowlan);
+		if (ret) {
+			mwifiex_dbg(adapter, ERROR, "Failed to set MEF filter\n");
+			goto done;
+		}
 	}
 
 	memset(&hs_cfg, 0, sizeof(hs_cfg));
 	hs_cfg.conditions = le32_to_cpu(adapter->hs_cfg.conditions);
+
+	if (wowlan->any)
+		hs_cfg.conditions |= HS_CFG_COND_UNICAST_DATA;
 
 	if (wowlan->nd_config) {
 		mwifiex_dbg(adapter, INFO, "Wake on net detect\n");
@@ -3504,6 +3509,8 @@ static int mwifiex_cfg80211_resume(struct wiphy *wiphy)
 	priv = mwifiex_get_priv(adapter, MWIFIEX_BSS_ROLE_STA);
 	mwifiex_get_wakeup_reason(priv, HostCmd_ACT_GEN_GET, MWIFIEX_SYNC_CMD,
 				  &wakeup_reason);
+	mwifiex_dbg(adapter, INFO, "WoWLAN resume: reason=%u wake_by_wifi=%d\n",
+		    wakeup_reason.hs_wakeup_reason, adapter->wake_by_wifi);
 	memset(&wakeup_report, 0, sizeof(struct cfg80211_wowlan_wakeup));
 
 	wakeup_report.pattern_idx = -1;
@@ -4362,6 +4369,13 @@ int mwifiex_register_cfg80211(struct mwifiex_adapter *adapter)
 		wiphy->wowlan = &mwifiex_wowlan_support;
 	else
 		wiphy->wowlan = &mwifiex_wowlan_support_no_gtk;
+
+	if (adapter->irq_wakeup >= 0) {
+		wiphy->wowlan_config = kzalloc(sizeof(*wiphy->wowlan_config),
+					       GFP_KERNEL);
+		if (wiphy->wowlan_config)
+			wiphy->wowlan_config->any = true;
+	}
 #endif
 
 	wiphy->coalesce = &mwifiex_coalesce_support;
