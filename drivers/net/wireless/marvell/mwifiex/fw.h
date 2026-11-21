@@ -463,6 +463,7 @@ enum mwifiex_channel_flags {
 #define HostCmd_ACT_BITWISE_SET               0x0002
 #define HostCmd_ACT_BITWISE_CLR               0x0003
 #define HostCmd_RESULT_OK                     0x0000
+#define HostCmd_RESULT_NOT_SUPPORT            0x0002
 #define HostCmd_ACT_MAC_RX_ON                 BIT(0)
 #define HostCmd_ACT_MAC_TX_ON                 BIT(1)
 #define HostCmd_ACT_MAC_WEP_ENABLE            BIT(3)

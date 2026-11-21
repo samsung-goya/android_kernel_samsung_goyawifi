@@ -1207,6 +1207,13 @@ int mwifiex_process_sta_cmdresp(struct mwifiex_private *priv, u16 cmdresp_no,
 	struct mwifiex_adapter *adapter = priv->adapter;
 	void *data_buf = adapter->curr_cmd->data_buf;
 
+	/* Do not let this command's failure lead to expansion of
+	 * mwifiex_process_cmdresp() to error path during init.
+	 */
+	if (cmdresp_no == HostCmd_CMD_CHAN_REGION_CFG &&
+	    le16_to_cpu(resp->result) == HostCmd_RESULT_NOT_SUPPORT)
+		return 0;
+
 	/* If the command is not successful, cleanup and return failure */
 	if (resp->result != HostCmd_RESULT_OK) {
 		mwifiex_process_cmdresp_error(priv, resp);
