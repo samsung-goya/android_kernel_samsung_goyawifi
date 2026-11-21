@@ -343,8 +343,6 @@
 		vcca-supply = <&ldo1>;
 		touchscreen-size-x = <600>;
 		touchscreen-size-y = <1024>;
-		touchscreen-inverted-x;
-		touchscreen-swapped-x-y;
 		zinitix,mode = <0>;
 		linux,keycodes = <KEY_RESERVED KEY_MENU KEY_BACK KEY_RESERVED>;
 	};
