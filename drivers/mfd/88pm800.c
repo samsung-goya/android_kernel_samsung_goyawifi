@@ -31,6 +31,7 @@
 #include <linux/of_device.h>
 #include <linux/reboot.h>
 #include <linux/delay.h>
+#include <linux/power_supply.h>
 
 /* Interrupt Registers */
 #define PM800_INT_STATUS1		(0x05)
@@ -345,20 +346,48 @@ static struct regmap_irq_chip pm822_irq_chip = {
 };
 
 static struct regmap *pm822_base_map;
+static bool pm822_charger_online;
+
+static bool pm822_is_charger_online(void)
+{
+	struct power_supply *psy;
+	union power_supply_propval val;
+	int ret;
+
+	psy = power_supply_get_by_name("smb328-charger");
+	if (!psy)
+		return false;
+
+	ret = power_supply_get_property(psy, POWER_SUPPLY_PROP_ONLINE, &val);
+	power_supply_put(psy);
+
+	return !ret && val.intval;
+}
 
 static int pm822_reboot_notifier(struct notifier_block *nb,
 				 unsigned long action, void *data)
 {
 	const char *cmd = data;
-	unsigned int val = 0;
+	unsigned int val = PM822_BOOT_BY_INTENDED_RESET;
 
 	if (!pm822_base_map)
 		return NOTIFY_DONE;
 
-	if (cmd && !strcmp(cmd, "recovery"))
-		val = PM822_REBOOT_RECOVERY;
+	if (action == SYS_POWER_OFF) {
+		pm822_charger_online = pm822_is_charger_online();
+		return NOTIFY_DONE;
+	}
 
-	regmap_update_bits(pm822_base_map, PM822_GENERAL_USE_REG, 0x1f, val);
+	if (cmd) {
+		if (!strcmp(cmd, "recovery"))
+			val = PM822_REBOOT_RECOVERY;
+		else if (!strcmp(cmd, "recovery_done"))
+			val = PM822_BOOT_BY_RECOVERY_DONE;
+		else if (!strcmp(cmd, "download") || !strcmp(cmd, "bootloader"))
+			val = PM822_REBOOT_DOWNLOAD;
+	}
+
+	regmap_write(pm822_base_map, PM822_GENERAL_USE_REG, val);
 	return NOTIFY_DONE;
 }
 
@@ -371,9 +400,17 @@ static void pm822_poweroff(void)
 	if (!pm822_base_map)
 		return;
 
+	if (pm822_charger_online) {
+		pr_emerg("88pm822: charger connected on poweroff, rebooting into LPM...\n");
+		regmap_write(pm822_base_map, PM822_GENERAL_USE_REG,
+			     PM822_BOOT_BY_CHG | PM822_SHUTDOWN_BY_POWEROFF);
+		machine_restart("ta");
+		return;
+	}
+
 	pr_emerg("88pm822: powering off system...\n");
 	regmap_write(pm822_base_map, PM822_GENERAL_USE_REG,
-		     PM822_SHUTDOWN_BY_POWEROFF);
+		     PM822_BOOT_BY_NONE | PM822_SHUTDOWN_BY_POWEROFF);
 	regmap_update_bits(pm822_base_map, PM800_WAKEUP1,
 			   BIT(5), BIT(5));
 	mdelay(1000);
@@ -777,6 +814,18 @@ static int pm800_probe(struct i2c_client *client,
 		pdata->plat_config(chip, pdata);
 
 	if (chip->type == CHIP_PM822) {
+		unsigned int reason = 0;
+
+		if (regmap_read(chip->regmap, PM822_GENERAL_USE_REG, &reason) == 0) {
+			dev_info(chip->dev, "88pm822: general use reg = 0x%02x\n",
+				 reason);
+			if ((reason & PM822_REBOOT_DN_MASK) != PM822_REBOOT_RECOVERY)
+				regmap_write(chip->regmap, PM822_GENERAL_USE_REG,
+					     PM822_BOOT_BY_HW_RESET);
+			else
+				regmap_update_bits(chip->regmap, PM822_GENERAL_USE_REG,
+						   PM822_SHUTDOWN_MASK, 0);
+		}
 		pm822_base_map = chip->regmap;
 		pm_power_off = pm822_poweroff;
 		register_reboot_notifier(&pm822_reboot_nb);
