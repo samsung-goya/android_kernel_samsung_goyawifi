@@ -4540,6 +4540,8 @@ static int check_return_code(struct bpf_verifier_env *env)
 			range = tnum_range(1, 1);
 	case BPF_PROG_TYPE_CGROUP_SKB:
 	case BPF_PROG_TYPE_CGROUP_SOCK:
+		range = tnum_range(0, 0xff);
+		break;
 	case BPF_PROG_TYPE_SOCK_OPS:
 	case BPF_PROG_TYPE_CGROUP_DEVICE:
 		break;
