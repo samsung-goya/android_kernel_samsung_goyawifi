@@ -490,9 +490,31 @@ static const struct drm_crtc_helper_funcs mmp_crtc_helper_funcs = {
 	.atomic_flush = mmp_crtc_atomic_flush,
 };
 
+static int mmp_crtc_page_flip(struct drm_crtc *crtc,
+			      struct drm_framebuffer *fb,
+			      struct drm_pending_vblank_event *event,
+			      uint32_t flags,
+			      struct drm_modeset_acquire_ctx *ctx)
+{
+	int ret, tries = 10;
+
+	/*
+	 * Legacy callers without DRM_MODE_PAGE_FLIP_EVENT (such as Android
+	 * libminui's back-to-back gr_flip() in charger/recovery) cannot wait
+	 * for flip completion and treat -EBUSY as fatal. Wait for vblank and
+	 * retry when a previous nonblocking commit is still pending.
+	 */
+	while ((ret = drm_atomic_helper_page_flip(crtc, fb, event, flags,
+						  ctx)) == -EBUSY &&
+	       !event && tries--)
+		drm_crtc_wait_one_vblank(crtc);
+
+	return ret;
+}
+
 static const struct drm_crtc_funcs mmp_crtc_funcs = {
 	.set_config = drm_atomic_helper_set_config,
-	.page_flip = drm_atomic_helper_page_flip,
+	.page_flip = mmp_crtc_page_flip,
 	.destroy = drm_crtc_cleanup,
 	.reset = drm_atomic_helper_crtc_reset,
 	.atomic_duplicate_state = drm_atomic_helper_crtc_duplicate_state,
