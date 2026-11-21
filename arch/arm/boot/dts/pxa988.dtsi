@@ -37,6 +37,7 @@
 			clocks = <&soc_clocks PXA988_CLK_CPU>;
 			clock-names = "cpu";
 			next-level-cache = <&L2>;
+			dynamic-power-coefficient = <100>;
 			#cooling-cells = <2>;
 		};
 
@@ -47,6 +48,7 @@
 			clocks = <&soc_clocks PXA988_CLK_CPU>;
 			clock-names = "cpu";
 			next-level-cache = <&L2>;
+			dynamic-power-coefficient = <100>;
 			#cooling-cells = <2>;
 		};
 	};
