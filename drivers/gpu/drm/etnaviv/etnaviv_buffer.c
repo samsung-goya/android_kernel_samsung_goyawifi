@@ -334,12 +334,8 @@ void etnaviv_buffer_queue(struct etnaviv_gpu *gpu, u32 exec_state,
 		extra_dwords = 1;
 
 		/* flush command */
-		if (need_flush) {
-			if (gpu->mmu->version == ETNAVIV_IOMMU_V1)
-				extra_dwords += 1;
-			else
-				extra_dwords += 3;
-		}
+		if (need_flush)
+			extra_dwords += 3;
 
 		/* pipe switch commands */
 		if (switch_context)
@@ -347,8 +343,13 @@ void etnaviv_buffer_queue(struct etnaviv_gpu *gpu, u32 exec_state,
 
 		target = etnaviv_buffer_reserve(gpu, buffer, extra_dwords);
 
+		if (switch_context) {
+			etnaviv_cmd_select_pipe(gpu, buffer, exec_state);
+			gpu->exec_state = exec_state;
+		}
+
 		if (need_flush) {
-			/* Add the MMU flush */
+			/* Add the MMU flush on the active target pipe */
 			if (gpu->mmu->version == ETNAVIV_IOMMU_V1) {
 				CMD_LOAD_STATE(buffer, VIVS_GL_FLUSH_MMU,
 					       VIVS_GL_FLUSH_MMU_FLUSH_FEMMU |
@@ -356,6 +357,10 @@ void etnaviv_buffer_queue(struct etnaviv_gpu *gpu, u32 exec_state,
 					       VIVS_GL_FLUSH_MMU_FLUSH_UNK2 |
 					       VIVS_GL_FLUSH_MMU_FLUSH_PEMMU |
 					       VIVS_GL_FLUSH_MMU_FLUSH_UNK4);
+				CMD_SEM(buffer, SYNC_RECIPIENT_FE,
+					SYNC_RECIPIENT_PE);
+				CMD_STALL(buffer, SYNC_RECIPIENT_FE,
+					SYNC_RECIPIENT_PE);
 			} else {
 				CMD_LOAD_STATE(buffer, VIVS_MMUv2_CONFIGURATION,
 					VIVS_MMUv2_CONFIGURATION_MODE_MASK |
@@ -368,11 +373,6 @@ void etnaviv_buffer_queue(struct etnaviv_gpu *gpu, u32 exec_state,
 			}
 
 			gpu->flush_seq = new_flush_seq;
-		}
-
-		if (switch_context) {
-			etnaviv_cmd_select_pipe(gpu, buffer, exec_state);
-			gpu->exec_state = exec_state;
 		}
 
 		/* And the link to the submitted buffer */
