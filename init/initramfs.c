@@ -458,6 +458,10 @@ static unsigned long my_inptr; /* index of next byte to be processed in inbuf */
 
 #include <linux/decompress/generic.h>
 
+#ifdef CONFIG_ARM_SAMSUNG_PXA_BOOTFIXUP
+static int __initdata archives_done;
+#endif
+
 static char * __init unpack_to_rootfs(char *buf, unsigned long len)
 {
 	long written;
@@ -475,13 +479,31 @@ static char * __init unpack_to_rootfs(char *buf, unsigned long len)
 	state = Start;
 	this_header = 0;
 	message = NULL;
+#ifdef CONFIG_ARM_SAMSUNG_PXA_BOOTFIXUP
+	archives_done = 0;
+#endif
 	while (!message && len) {
 		loff_t saved_offset = this_header;
+#ifdef CONFIG_ARM_SAMSUNG_PXA_BOOTFIXUP
+		/*
+		 * goyawifi: S-Boot always passes a fixed 16 MiB initrd span,
+		 * and whatever follows the compressed ramdisk in that span is
+		 * leftover RAM data. Once a complete archive has been unpacked,
+		 * stop at the first non-padding byte instead of rejecting the
+		 * image so repacked ramdisks of any size (e.g. Magisk) boot.
+		 */
+		if (archives_done && *buf && state == Reset)
+			break;
+#endif
 		if (*buf == '0' && !(this_header & 3)) {
 			state = Start;
 			written = write_buffer(buf, len);
 			buf += written;
 			len -= written;
+#ifdef CONFIG_ARM_SAMSUNG_PXA_BOOTFIXUP
+			if (state == Reset)
+				archives_done++;
+#endif
 			continue;
 		}
 		if (!*buf) {
@@ -509,6 +531,10 @@ static char * __init unpack_to_rootfs(char *buf, unsigned long len)
 			error("junk in compressed archive");
 		if (state != Reset)
 			error("junk in compressed archive");
+#ifdef CONFIG_ARM_SAMSUNG_PXA_BOOTFIXUP
+		else
+			archives_done++;
+#endif
 		this_header = saved_offset + my_inptr;
 		buf += my_inptr;
 		len -= my_inptr;

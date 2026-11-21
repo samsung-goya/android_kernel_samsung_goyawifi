@@ -39,8 +39,28 @@ void __init samsung_pxa_fixup_boot_fdt(void *blob, phys_addr_t dt_phys)
 
 	size_prop = fdt_getprop(blob, chosen, "samsung,goyawifi-initrd-size",
 				&len);
-	if (!size_prop || len != sizeof(*size_prop))
+	if (!size_prop || len != sizeof(*size_prop)) {
+		const fdt32_t *s_prop = fdt_getprop(blob, chosen,
+						    "linux,initrd-start", &len);
+		const fdt32_t *e_prop = fdt_getprop(blob, chosen,
+						    "linux,initrd-end", &len);
+		const fdt32_t *o_prop = fdt_getprop(blob, chosen,
+						    "samsung,goyawifi-orig-initrd",
+						    &len);
+		const char *bcmd = fdt_getprop(blob, chosen,
+					       "samsung,goyawifi-boot-cmdline",
+					       &len);
+		if (bcmd && len > 0)
+			pr_info("goyawifi: bootloader cmdline: %s\n", bcmd);
+		if (s_prop && e_prop)
+			pr_info("goyawifi: bootloader initramfs %08x..%08x (orig %08x), FDT at %pa\n",
+				fdt32_to_cpu(*s_prop), fdt32_to_cpu(*e_prop),
+				o_prop ? fdt32_to_cpu(*o_prop) : 0, &dt_phys);
+		else
+			pr_warn("goyawifi: no initramfs in FDT (FDT at %pa)\n",
+				&dt_phys);
 		return;
+	}
 
 	size = fdt32_to_cpu(*size_prop);
 	total = fdt_totalsize(blob);
