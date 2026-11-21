@@ -18,6 +18,7 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
+#include <linux/pm_wakeup.h>
 #include <linux/regmap.h>
 #include <linux/slab.h>
 #include <linux/extcon-provider.h>
@@ -59,6 +60,7 @@ struct rt8973a_muic_info {
 	struct reg_data *reg_data;
 	unsigned int num_reg_data;
 	bool auto_config;
+	bool usb_awake;
 
 	struct mutex mutex;
 
@@ -410,6 +412,21 @@ static int rt8973a_muic_cable_handler(struct rt8973a_muic_info *info,
 		extcon_set_state_sync(info->edev, EXTCON_CHG_USB_SDP,
 					attached);
 
+	/*
+	 * Keep the system out of deep suspend (D2_UDR) while a USB data
+	 * connection is active so ADB/MTP/RNDIS remain responsive. Wall
+	 * chargers (EXTCON_CHG_USB_DCP) do not hold this wakeup source.
+	 */
+	if (id == EXTCON_USB || id == EXTCON_USB_HOST) {
+		if (attached && !info->usb_awake) {
+			pm_stay_awake(info->dev);
+			info->usb_awake = true;
+		} else if (!attached && info->usb_awake) {
+			pm_relax(info->dev);
+			info->usb_awake = false;
+		}
+	}
+
 	return 0;
 }
 
@@ -588,6 +605,7 @@ static int rt8973a_muic_i2c_probe(struct i2c_client *i2c,
 	info->dev = &i2c->dev;
 	info->i2c = i2c;
 	info->irq = i2c->irq;
+	device_init_wakeup(info->dev, true);
 	info->muic_irqs = rt8973a_muic_irqs;
 	info->num_muic_irqs = ARRAY_SIZE(rt8973a_muic_irqs);
 	info->reg_data = rt8973a_reg_data;
@@ -672,6 +690,10 @@ static int rt8973a_muic_i2c_remove(struct i2c_client *i2c)
 {
 	struct rt8973a_muic_info *info = i2c_get_clientdata(i2c);
 
+	if (info->usb_awake) {
+		pm_relax(info->dev);
+		info->usb_awake = false;
+	}
 	regmap_del_irq_chip(info->irq, info->irq_data);
 
 	return 0;
