@@ -368,7 +368,15 @@ static int pm822_reboot_notifier(struct notifier_block *nb,
 				 unsigned long action, void *data)
 {
 	const char *cmd = data;
-	unsigned int val = PM822_BOOT_BY_INTENDED_RESET;
+	/*
+	 * S-Boot latches a sticky recovery state upon seeing
+	 * PM822_REBOOT_RECOVERY (0x06) and only clears it on
+	 * PM822_BOOT_BY_RECOVERY_DONE (0x0c), not on 0x08.
+	 * Use PM822_BOOT_BY_RECOVERY_DONE for all normal reboots so
+	 * exiting recovery via standard reboot / init never loops.
+	 */
+	unsigned int val = PM822_BOOT_BY_RECOVERY_DONE;
+	int ret;
 
 	if (!pm822_base_map)
 		return NOTIFY_DONE;
@@ -387,7 +395,9 @@ static int pm822_reboot_notifier(struct notifier_block *nb,
 			val = PM822_REBOOT_DOWNLOAD;
 	}
 
-	regmap_write(pm822_base_map, PM822_GENERAL_USE_REG, val);
+	ret = regmap_write(pm822_base_map, PM822_GENERAL_USE_REG, val);
+	pr_info("88pm822: reboot action=%lu cmd='%s' -> reg 0xef=0x%02x (ret=%d)\n",
+		action, cmd ? cmd : "(null)", val, ret);
 	return NOTIFY_DONE;
 }
 
@@ -819,12 +829,8 @@ static int pm800_probe(struct i2c_client *client,
 		if (regmap_read(chip->regmap, PM822_GENERAL_USE_REG, &reason) == 0) {
 			dev_info(chip->dev, "88pm822: general use reg = 0x%02x\n",
 				 reason);
-			if ((reason & PM822_REBOOT_DN_MASK) != PM822_REBOOT_RECOVERY)
-				regmap_write(chip->regmap, PM822_GENERAL_USE_REG,
-					     PM822_BOOT_BY_HW_RESET);
-			else
-				regmap_update_bits(chip->regmap, PM822_GENERAL_USE_REG,
-						   PM822_SHUTDOWN_MASK, 0);
+			regmap_write(chip->regmap, PM822_GENERAL_USE_REG,
+				     PM822_BOOT_BY_HW_RESET);
 		}
 		pm822_base_map = chip->regmap;
 		pm_power_off = pm822_poweroff;
