@@ -782,11 +782,23 @@ static int i2c_pxa_do_pio_xfer(struct pxa_i2c *i2c,
 			       struct i2c_msg *msg, int num)
 {
 	unsigned long timeout = 500000; /* 5 seconds */
+	unsigned long flags;
+	u32 icr_saved;
 	int ret = 0;
 
 	ret = i2c_pxa_pio_set_master(i2c);
 	if (ret)
 		goto out;
+
+	/*
+	 * Prevent the real hardware IRQ handler from racing with the
+	 * polled i2c_pxa_handler(0, i2c) loop when PIO fallback is used
+	 * on an interrupt-driven adapter (e.g. during poweroff/atomic xfer).
+	 */
+	spin_lock_irqsave(&i2c->lock, flags);
+	icr_saved = readl(_ICR(i2c));
+	writel(icr_saved & ~(ICR_ITEIE | ICR_IRFIE | ICR_BEIE | ICR_ALDIE),
+	       _ICR(i2c));
 
 	i2c->msg = msg;
 	i2c->msg_num = num;
@@ -802,11 +814,15 @@ static int i2c_pxa_do_pio_xfer(struct pxa_i2c *i2c,
 	}
 
 	i2c_pxa_stop_message(i2c);
+	writel((readl(_ICR(i2c)) & ~(ICR_ITEIE | ICR_IRFIE | ICR_BEIE | ICR_ALDIE)) |
+	       (icr_saved & (ICR_ITEIE | ICR_IRFIE | ICR_BEIE | ICR_ALDIE)),
+	       _ICR(i2c));
 
 	/*
 	 * We place the return code in i2c->msg_idx.
 	 */
 	ret = i2c->msg_idx;
+	spin_unlock_irqrestore(&i2c->lock, flags);
 
 out:
 	if (timeout == 0) {
@@ -1096,10 +1112,18 @@ static void i2c_pxa_irq_rxfull(struct pxa_i2c *i2c, u32 isr)
 static irqreturn_t i2c_pxa_handler(int this_irq, void *dev_id)
 {
 	struct pxa_i2c *i2c = dev_id;
-	u32 isr = readl(_ISR(i2c));
+	u32 isr;
 
-	if (!(isr & VALID_INT_SOURCE))
+	if (this_irq != 0)
+		spin_lock(&i2c->lock);
+
+	isr = readl(_ISR(i2c));
+
+	if (!(isr & VALID_INT_SOURCE)) {
+		if (this_irq != 0)
+			spin_unlock(&i2c->lock);
 		return IRQ_NONE;
+	}
 
 	if (i2c_debug > 2 && 0) {
 		dev_dbg(&i2c->adap.dev, "%s: ISR=%08x, ICR=%08x, IBMR=%02x\n",
@@ -1139,6 +1163,9 @@ static irqreturn_t i2c_pxa_handler(int this_irq, void *dev_id)
 		i2c_pxa_scream_blue_murder(i2c, "spurious irq");
 	}
 
+	if (this_irq != 0)
+		spin_unlock(&i2c->lock);
+
 	return IRQ_HANDLED;
 }
 
@@ -1151,7 +1178,7 @@ static int i2c_pxa_xfer(struct i2c_adapter *adap, struct i2c_msg msgs[], int num
 	if (i2c->shutdown)
 		return -ESHUTDOWN;
 
-	if (in_atomic() || irqs_disabled() || system_state > SYSTEM_RUNNING)
+	if (in_atomic() || irqs_disabled() || system_state == SYSTEM_POWER_OFF)
 		return i2c_pxa_pio_xfer(adap, msgs, num);
 
 	for (i = adap->retries; i >= 0; i--) {
@@ -1465,6 +1492,7 @@ static void i2c_pxa_shutdown(struct platform_device *dev)
 	if (system_state == SYSTEM_RESTART || system_state == SYSTEM_HALT) {
 		i2c_lock_bus(&i2c->adap, I2C_LOCK_ROOT_ADAPTER);
 		i2c->shutdown = true;
+		i2c_pxa_wait_bus_not_busy(i2c);
 		i2c_unlock_bus(&i2c->adap, I2C_LOCK_ROOT_ADAPTER);
 	}
 }
