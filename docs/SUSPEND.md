@@ -3,7 +3,8 @@
 ## Stack
 - **cpuidle:** `cpuidle-pxa988` (`C1` / `C2` states)
 - **Suspend:** `pm-pxa988` (`D2_UDR` low-power mode + `s2idle`), `headsmp-pxa988.S` warm-reset entry via `CIU_WARM_RESET_VECTOR`
-- **Wakeups:** `gpio-pxa` wakeup sources (e.g., `gpio-keys` Volume/Home), PMIC (`88pm80x_on`)
+- **Wakeups:** `gpio-pxa` wakeup sources (e.g., `gpio-keys` Home `GPIO13`, `rt8973a-muic` `GPIO93`, `mwifiex` `WLAN_WU_HOST` `GPIO84` driven by SD8777 `GPIO[9]`), PMIC (`88pm80x_on`, `88pm80x-rtc`)
+- **USB data wakelock:** `extcon-rt8973a` holds a wakeup source while `EXTCON_USB` / `EXTCON_USB_HOST` is attached so ADB/USB stays responsive (wall chargers `EXTCON_CHG_USB_DCP` still allow `D2_UDR`).
 - **Watchdog & crash logs:** `pxa988_wdt` (20s HW watchdog) + `ramoops` at `0x08100000` (TWRP `/proc/last_kmsg` compatible)
 
 ## Notes

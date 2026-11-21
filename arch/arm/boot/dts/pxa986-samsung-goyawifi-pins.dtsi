@@ -198,11 +198,17 @@
 		pinctrl-single,pins = <
 			GPIO51 AF0	/* WLAN_PD */
 			GPIO83 AF0	/* HOST_WU_WLAN */
-			GPIO84 AF0	/* WLAN_WU_HOST */
 			GPIO85 AF0	/* WL_REG_ON */
 			GPIO86 AF0	/* BT_REG_ON */
 		>;
 		pinctrl-single,drive-strength = <DS_MEDIUM DS_MASK>;
+	};
+
+	wlan_wake_pins: wlan-wake-pins {
+		pinctrl-single,pins = <
+			GPIO84 AF0	/* WLAN_WU_HOST */
+		>;
+		pinctrl-single,bias-pullup = <PULL_UP PULL_UP PULL_NONE PULL_MASK>;
 	};
 
 	touch_pins: touch-pins {

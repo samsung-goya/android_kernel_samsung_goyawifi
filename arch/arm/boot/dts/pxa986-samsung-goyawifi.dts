@@ -623,7 +623,7 @@
 /* Marvell 88W8777 SDIO Wi-Fi / Bluetooth */
 &sdh2 {
 	pinctrl-names = "default";
-	pinctrl-0 = <&sdh2_wlan_pins &wlan_bt_ctrl_pins>;
+	pinctrl-0 = <&sdh2_wlan_pins &wlan_bt_ctrl_pins &wlan_wake_pins>;
 	bus-width = <4>;
 	non-removable;
 	no-sd;
@@ -637,7 +637,17 @@
 	assigned-clocks = <&soc_clocks PXA988_CLK_SDH1>;
 	assigned-clock-rates = <52000000>;
 	mrvl,clk-delay-cycles = <15>;
+	#address-cells = <1>;
+	#size-cells = <0>;
 	status = "okay";
+
+	mwifiex: wifi@1 {
+		compatible = "marvell,sd8777";
+		reg = <1>;
+		interrupt-parent = <&gpio>;
+		interrupts = <84 IRQ_TYPE_EDGE_FALLING>;
+		marvell,wakeup-pin = <9>;
+	};
 };
 
 /* Full KMS + MIPI DSI -> VX5B3D -> LVDS Panel Display Pipeline */
