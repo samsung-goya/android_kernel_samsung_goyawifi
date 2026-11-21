@@ -90,6 +90,21 @@ static int goya_parse_cmdline_initrd(const char *cmdline,
 	}
 	return 0;
 }
+
+static int goya_cmdline_has_token(const char *cmdline, const char *token)
+{
+	size_t tlen = strlen(token);
+	const char *p = cmdline;
+
+	while (*p) {
+		if ((p == cmdline || p[-1] == ' ' || p[-1] == '\t') &&
+		    memcmp(p, token, tlen) == 0 &&
+		    (p[tlen] == '\0' || p[tlen] == ' ' || p[tlen] == '\t'))
+			return 1;
+		p++;
+	}
+	return 0;
+}
 #endif
 
 static int node_offset(void *fdt, const char *node_path)
@@ -237,6 +252,14 @@ int atags_to_fdt(void *atag_list, void *fdt, int total_space)
 				setprop_string(fdt, "/chosen",
 					       "samsung,goyawifi-boot-cmdline",
 					       atag->u.cmdline.cmdline);
+				if (goya_cmdline_has_token(atag->u.cmdline.cmdline,
+							   "lpcharge=1") ||
+				    goya_cmdline_has_token(atag->u.cmdline.cmdline,
+							   "androidboot.mode=charger") ||
+				    goya_cmdline_has_token(atag->u.cmdline.cmdline,
+							   "lpm_boot=1"))
+					merge_fdt_bootargs(fdt,
+							   "androidboot.mode=charger lpcharge=1");
 				if (!goya_initrd_size)
 					goya_parse_cmdline_initrd(
 						atag->u.cmdline.cmdline,
