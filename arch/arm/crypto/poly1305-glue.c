@@ -255,7 +255,7 @@ static void __exit arm_poly1305_mod_exit(void)
 {
 	if (!IS_REACHABLE(CONFIG_CRYPTO_HASH))
 		return;
-	if (!static_branch_likely(&have_neon)) {
+	if (!IS_ENABLED(CONFIG_KERNEL_MODE_NEON) || !(elf_hwcap & HWCAP_NEON)) {
 		crypto_unregister_shash(&arm_poly1305_algs[0]);
 		return;
 	}
