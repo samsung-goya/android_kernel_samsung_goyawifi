@@ -1,0 +1,90 @@
+name: Kernel build
+
+on:
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: 'Target defconfig'
+        required: true
+        default: 'goyawifi_defconfig'
+        type: choice
+        options:
+          - goyawifi_defconfig
+          - goyawifi_android_defconfig
+          - goyawifi_recovery_defconfig
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      ARCH: arm
+      CROSS_COMPILE: arm-linux-gnueabihf-
+
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            bc \
+            bison \
+            flex \
+            libelf-dev \
+            libssl-dev \
+            libncurses-dev \
+            gcc-arm-linux-gnueabihf \
+            kmod \
+            tar \
+            xz-utils
+
+      - name: Apply defconfig
+        run: |
+          echo "Applying ${{ inputs.defconfig }} for ARCH=${ARCH}..."
+          make ARCH="${ARCH}" CROSS_COMPILE="${CROSS_COMPILE}" "${{ inputs.defconfig }}"
+
+      - name: Compile kernel
+        run: |
+          echo "Building kernel with $(nproc) threads..."
+          make -j"$(nproc)" ARCH="${ARCH}" CROSS_COMPILE="${CROSS_COMPILE}" zImage modules dtbs
+
+      - name: Stage kernel and DTB
+        run: |
+          mkdir -p staging/kernel/dtbs
+          cp .config staging/kernel/config
+
+          if [ -f arch/arm/boot/zImage ]; then
+            cp arch/arm/boot/zImage staging/kernel/zImage
+          fi
+
+          # Collect compiled device tree binaries
+          find arch/arm/boot/dts/ -name "*.dtb" -exec cp {} staging/kernel/dtbs/ \; 2>/dev/null || true
+
+      - name: Stage modules
+        run: |
+          mkdir -p mod_root staging/modules
+
+          # Install modules into isolated root
+          make ARCH="${ARCH}" CROSS_COMPILE="${CROSS_COMPILE}" INSTALL_MOD_PATH=mod_root modules_install
+
+          # Clean up broken host-absolute symlinks
+          find mod_root/lib/modules/ -maxdepth 2 -type l -exec rm -f {} + 2>/dev/null || true
+
+          # Create standalone archive
+          tar -czf staging/modules/modules.tar.gz -C mod_root lib/modules
+
+      - name: Upload kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-image-${{ inputs.defconfig }}
+          path: staging/kernel/
+          retention-days: 7
+
+      - name: Upload modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-modules-${{ inputs.defconfig }}
+          path: staging/modules/
+          retention-days: 7
