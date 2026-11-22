@@ -46,9 +46,18 @@ jobs:
           make ARCH="${ARCH}" CROSS_COMPILE="${CROSS_COMPILE}" "${{ inputs.defconfig }}"
 
       - name: Compile kernel
+        id: compile
         run: |
           echo "Building kernel with $(nproc) threads..."
-          make -j"$(nproc)" ARCH="${ARCH}" CROSS_COMPILE="${CROSS_COMPILE}" zImage modules dtbs
+          TARGETS="zImage dtbs"
+          if grep -q '^CONFIG_MODULES=y$' .config; then
+            TARGETS="zImage modules dtbs"
+            echo "has_modules=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Modules disabled in .config; skipping modules target."
+            echo "has_modules=false" >> "$GITHUB_OUTPUT"
+          fi
+          make -j"$(nproc)" ARCH="${ARCH}" CROSS_COMPILE="${CROSS_COMPILE}" ${TARGETS}
 
       - name: Stage kernel and DTB
         run: |
@@ -63,6 +72,7 @@ jobs:
           find arch/arm/boot/dts/ -name "*.dtb" -exec cp {} staging/kernel/dtbs/ \; 2>/dev/null || true
 
       - name: Stage modules
+        if: steps.compile.outputs.has_modules == 'true'
         run: |
           mkdir -p mod_root staging/modules
 
@@ -83,6 +93,7 @@ jobs:
           retention-days: 7
 
       - name: Upload modules
+        if: steps.compile.outputs.has_modules == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: kernel-modules-${{ inputs.defconfig }}
